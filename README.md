@@ -17,95 +17,151 @@ farmacia_medicamentos/
 
 ## Topología
 
-| Equipo | IP | Rol | Servicios |
+| Equipo | IP | Rol | Qué corre |
 |---|---|---|---|
-| Server 1 | 10.79.5.86 | **MASTER** (prioridad 120) | Windows: Flask :5000 y :5001 · VM Ubuntu: Nginx + Keepalived |
-| Server 2 | 10.79.4.177 | **ESCLAVO 1** (prioridad 110) | Windows: Flask :5000 y :5001 · VM Ubuntu: Nginx + Keepalived |
-| Server 3 | 10.79.7.16 | **ESCLAVO 2** (prioridad 100) | Windows: Flask :5000 y :5001 · SQL Server · VM Ubuntu: Nginx + Keepalived |
-| Cliente | 10.79.7.180 | Cliente | App Flutter → **http://10.79.7.200:90** (IP virtual) |
+| Cliente | 10.79.7.180 | Cliente · **Entorno API 1** | **BD** (SQL Server Express) · **API :5000** · **App Flutter** |
+| Server 1 | 10.79.5.86 | **MASTER** (prioridad 120) · **Entorno API 2** | Windows: **API :5001** · VM Ubuntu: NGINX + Keepalived |
+| Server 2 | 10.79.4.177 | **ESCLAVO 1** (prioridad 110) | VM Ubuntu: NGINX + Keepalived |
+| Server 3 | 10.79.7.16 | **ESCLAVO 2** (prioridad 100) | VM Ubuntu: NGINX + Keepalived |
 
 ```
-                Flutter (10.79.7.180)
-                        │
-                        ▼
-              IP VIRTUAL 10.79.7.200   ← Keepalived la mueve
-      ┌─────────────────┼─────────────────┐
-  Server1 (MASTER)  Server2 (ESCLAVO1)  Server3 (ESCLAVO2)
-   Nginx              Nginx              Nginx
-      └─ upstream (6 APIs): .86 / .177 / .16  ×  :5000 y :5001 ─┘
-                        │
-       SQL Server 10.79.7.16 · AppDistribuidas_2026_DB
+ App Flutter (cliente) ──► http://10.79.7.200:90   ← IP virtual (Keepalived)
+                                   │
+        ┌──────────────────────────┼──────────────────────────┐
+   Server1 MASTER            Server2 ESCLAVO1           Server3 ESCLAVO2
+   NGINX + Keepalived        NGINX + Keepalived         NGINX + Keepalived
+        └──────────────────────────┼──────────────────────────┘
+                  ┌────────────────┴────────────────┐
+                  ▼                                 ▼
+       Entorno 1: Cliente                 Entorno 2: Server 1 (Windows)
+       10.79.7.180:5000                   10.79.5.86:5001
+                  └────────────────┬────────────────┘
+                                   ▼
+             BD del cliente: SQL Server Express, 10.79.7.180,1433
 ```
+
+La API del puerto 5001 corre en Windows del Server 1, **independiente** de su VM
+(NGINX + Keepalived): si se cae el NGINX del Server 1, la API 5001 sigue atendiendo
+a través del NGINX que tome la IP virtual.
 
 **Failover:** si cae el MASTER, la IP pasa al ESCLAVO 1; si también cae, pasa al
 ESCLAVO 2. Cuando el MASTER vuelve, **recupera la IP** (preempt), aunque solo quede
 un esclavo activo. Si NGINX falla en un nodo, `chk_nginx` le resta 50 a la prioridad
 (120→70, 110→60, 100→50): un nodo con NGINX sano (≥100) siempre gana a uno caído.
-**Si caen los tres**, la app Flutter muestra **"Sistema en mantenimiento"**,
-reintenta cada 5 s y vuelve sola cuando un servidor responde.
+**Si caen los tres**, la app muestra **"Sistema en mantenimiento"** y vuelve sola.
 
 > ⚠ **Antes de desplegar:**
 > - Verifiquen que **10.79.7.200 está libre** (`ping 10.79.7.200` no debe responder).
->   Si está ocupada, cambien la IP virtual en los 3 `keepalived-*.conf` y en `farmacia_app/lib/config.dart`.
-> - Revisen la máscara (puse `/22`) y el nombre de la interfaz de la VM (puse `enp0s3`) con `ip a`.
-> - Si el rol de cada compañero es otro, solo intercambien los archivos de keepalived.
+>   Si está ocupada, cámbienla en los 3 `keepalived-*.conf` y en `farmacia_app/lib/config.dart`.
+> - Revisen la máscara (`/22`) y la interfaz de la VM (`enp0s3`) con `ip a`.
 
 ---
 
-## 1. Base de datos (SQL Server)
+## Guía rápida: comandos de cada computadora
 
-### En tu PC (desarrollo) – ya está creada
-La tabla `dbo.medicamentos` ya existe en `(localdb)\MSSQLLocalDB` → `AppDistribuidas_2026_DB`
-con los 20 medicamentos de prueba. Para recrearla:
+### Cliente (Windows, 10.79.7.180) — BD + API :5000 + App
 
-```bash
+**LocalDB no acepta conexiones de otra PC**, y la API 5001 (Server 1) usa esta BD:
+instalen **SQL Server Express** (+ `sqlcmd`) y en *SQL Server Configuration Manager →
+Protocolos de SQLEXPRESS → TCP/IP*: **Habilitado**; en *Direcciones IP → IPAll*: puertos
+dinámicos vacío y **Puerto TCP 1433**.
+
+```powershell
+# 0) Una sola vez, PowerShell como ADMINISTRADOR
+New-NetFirewallRule -DisplayName "API Farmacia 5000" -Direction Inbound -Protocol TCP -LocalPort 5000 -RemoteAddress 10.79.4.0/22 -Action Allow
+New-NetFirewallRule -DisplayName "SQL Farmacia"      -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress 10.79.5.86 -Action Allow
+
+# 1) Base de datos
 cd database
-sqlcmd -S "(localdb)\MSSQLLocalDB" -E -f 65001 -i 01_schema.sql
-sqlcmd -S "(localdb)\MSSQLLocalDB" -E -f 65001 -i 02_datos.sql
-sqlcmd -S "(localdb)\MSSQLLocalDB" -E -f 65001 -i 03_pruebas_controles.sql
+sqlcmd -S "localhost\SQLEXPRESS" -E -Q "IF DB_ID('AppDistribuidas_2026_DB') IS NULL CREATE DATABASE AppDistribuidas_2026_DB"
+sqlcmd -S "localhost\SQLEXPRESS" -E -f 65001 -i 01_schema.sql
+sqlcmd -S "localhost\SQLEXPRESS" -E -f 65001 -i 02_datos.sql
+sqlcmd -S "localhost\SQLEXPRESS" -E -f 65001 -i 04_login_api.sql
+Restart-Service 'MSSQL$SQLEXPRESS'            # (como administrador) aplica el TCP 1433 y la autenticación mixta
+
+# 2) API - Entorno 1 (puerto 5000)
+cd ..\backend
+pip install -r requirements.txt
+copy .env.example .env                         # ya trae DB_SERVER=localhost\SQLEXPRESS
+python app.py --host 0.0.0.0 --port 5000 --nombre cliente-5000      # dejar abierta
+
+# 3) App Flutter (apunta a http://10.79.7.200:90)
+cd ..\farmacia_app
+flutter pub get
+flutter run -d windows
 ```
 
-En SSMS también sirve: abrir cada archivo y presionar **F5**. `03_pruebas_controles.sql`
-intenta 14 operaciones inválidas y muestra que la BD **rechaza todas**.
+### Server 1 (Windows, 10.79.5.86) — API :5001 (Entorno 2)
 
-### En el Server 3 (despliegue)
-> **LocalDB NO acepta conexiones de otras PC.** Para que los Flask de Server 1 y 2 se
-> conecten, el Server 3 necesita **SQL Server Express o Developer** (Windows o Linux).
+Requiere Python y el **ODBC Driver 17 for SQL Server**.
 
-1. Instalar SQL Server, activar **autenticación mixta** y **TCP/IP en el puerto 1433**
-   (SQL Server Configuration Manager → Protocols → TCP/IP → Enabled; reiniciar el servicio).
-2. Crear la base `AppDistribuidas_2026_DB` y ejecutar `01_schema.sql` y `02_datos.sql`.
-3. Crear el usuario de la API (está comentado al final de `01_schema.sql`):
-   ```sql
-   CREATE LOGIN farmacia_app WITH PASSWORD = 'Farmacia2026*', CHECK_POLICY = OFF;
-   USE AppDistribuidas_2026_DB;
-   CREATE USER farmacia_app FOR LOGIN farmacia_app;
-   GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.medicamentos TO farmacia_app;
-   ```
-4. Abrir el firewall solo para los Flask:
-   `New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress 10.79.5.86,10.79.4.177,10.79.7.16 -Action Allow`
+```powershell
+# Una sola vez, PowerShell como ADMINISTRADOR
+New-NetFirewallRule -DisplayName "API Farmacia 5001" -Direction Inbound -Protocol TCP -LocalPort 5001 -RemoteAddress 10.79.4.0/22 -Action Allow
 
-## 2. API Flask (los 3 servidores, puertos 5000 y 5001)
+git clone https://github.com/javierpea/leccion-distribuidas-farmacia.git
+cd leccion-distribuidas-farmacia\backend
+pip install -r requirements.txt
+copy .env.example .env
+# En .env: comentar  DB_SERVER=localhost\SQLEXPRESS  y descomentar las 3 líneas del Entorno 2:
+#   DB_SERVER=10.79.7.180,1433 · DB_UID=farmacia_app · DB_PWD=Farmacia2026*
+python app.py --host 0.0.0.0 --port 5001 --nombre server1-5001      # dejar abierta
+```
 
-Necesitan el **ODBC Driver 17 o 18 for SQL Server** (en Linux: paquete `msodbcsql18`).
+### Server 1, 2 y 3 (VM Ubuntu en VirtualBox) — NGINX + Keepalived
 
+Keepalived no existe para Windows: en cada server se usa una **VM Ubuntu** con la red
+en **Adaptador puente** y **Modo promiscuo: Permitir todo** (mejor por cable).
+Dentro de la VM:
+
+```bash
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 keepalived curl git
+git clone https://github.com/javierpea/leccion-distribuidas-farmacia.git
+cd leccion-distribuidas-farmacia
+
+# NGINX (puerto 90)
+cd nginx && sudo docker compose up -d && cd ..
+
+# Keepalived
+sudo cp keepalived/check_nginx.sh /etc/keepalived/ && sudo chmod +x /etc/keepalived/check_nginx.sh
+sudo cp keepalived/keepalived-server1-master.conf  /etc/keepalived/keepalived.conf   # SOLO Server 1
+sudo cp keepalived/keepalived-server2-backup1.conf /etc/keepalived/keepalived.conf   # SOLO Server 2
+sudo cp keepalived/keepalived-server3-backup2.conf /etc/keepalived/keepalived.conf   # SOLO Server 3
+sudo systemctl enable keepalived && sudo systemctl restart keepalived
+```
+
+> Si la IP virtual aparece en **dos** VMs a la vez, la red bloquea multicast:
+> descomenten el bloque `unicast_*` de los `keepalived-*.conf` con las IPs de las VMs.
+
+### Pruebas
+
+```bash
+# En cada VM
+curl http://127.0.0.1:90/health                 # OK
+curl -i http://127.0.0.1:90/api/health          # X-Server alterna cliente-5000 / server1-5001
+ip a | grep 10.79.7.200                         # solo la VM con la IP virtual la muestra
+sudo journalctl -u keepalived -f                # ver MASTER/BACKUP en vivo
+
+# En el cliente
+curl.exe -i http://10.79.7.200:90/api/health
+```
+
+**Failover:**
+1. `sudo docker stop balanceador_nginx` en la VM del Server 1 → la IP pasa al Server 2.
+2. Lo mismo en la VM del Server 2 → pasa al Server 3.
+3. `sudo docker start balanceador_nginx` en el Server 1 → **vuelve al MASTER**.
+4. Detener los 3 → la app muestra **mantenimiento**; al levantar uno, vuelve sola.
+
+---
+
+## Detalle de la API
+
+Pruebas (en el cliente):
 ```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate            # Linux: source venv/bin/activate
-pip install -r requirements.txt
-copy .env.example .env           # descomentar DB_SERVER=10.79.7.16,1433 + DB_UID/DB_PWD
-
-# En CADA servidor, dos consolas (dos instancias de la misma API):
-python app.py --port 5000 --nombre pc1-5000     # PC2: pc2-5000 · PC3: pc3-5000
-python app.py --port 5001 --nombre pc1-5001     # PC2: pc2-5001 · PC3: pc3-5001
-```
-
-Pruebas:
-```bash
 python -m unittest discover -s tests -p "test_*.py" -v                            # sin BD (17)
-python tests/prueba_api.py --url http://127.0.0.1:5000 --url http://127.0.0.1:5001    # CRUD + controles (21)
-python tests/prueba_concurrencia.py --url http://127.0.0.1:5000 --url http://127.0.0.1:5001
+python tests/prueba_api.py --url http://127.0.0.1:5000 --url http://10.79.5.86:5001    # CRUD + controles (21)
+python tests/prueba_concurrencia.py --url http://127.0.0.1:5000 --url http://10.79.5.86:5001
 ```
 
 ### Endpoints
@@ -121,66 +177,9 @@ python tests/prueba_concurrencia.py --url http://127.0.0.1:5000 --url http://127
 | PATCH | `/api/medicamentos/<id>/stock` | `{"operacion":"SALIDA","cantidad":3}` |
 | DELETE | `/api/medicamentos/<id>?version=N` | Baja lógica (solo con stock 0) |
 
-Cada respuesta trae la cabecera **`X-Server`** (p. ej. `pc2-5001`) y, al pasar por NGINX,
-**`X-Upstream`** con la IP:puerto que respondió.
-
-## 3. Nginx + Keepalived (los 3 PCs Windows)
-
-**Keepalived no existe para Windows** (y en Docker Desktop / WSL2 la IP virtual
-queda dentro de una red NAT y la LAN no la ve). Por eso, igual que en la Unidad 2
-(`enp0s3` es la interfaz de VirtualBox), en **cada PC Windows** se crea una
-**VM Ubuntu en VirtualBox** que corre NGINX (Docker) + Keepalived:
-
-```
- PC Windows (10.79.x.x)                    VM Ubuntu (adaptador PUENTE)
- ├─ Flask :5000 y :5001 (+ SQL en PC3)     ├─ Docker: balanceador_nginx  90 -> 8080
- └─ VirtualBox ─────────────────────────►  └─ Keepalived  (IP virtual 10.79.7.200)
-```
-
-**3.1 VirtualBox (en cada PC):** Configuración → Red → Adaptador 1 →
-**Conectado a: Adaptador puente** (la tarjeta con la que salen a la red 10.79.x),
-**Modo promiscuo: Permitir todo**. Mejor por cable: con Wi‑Fi el modo puente puede
-no dejar pasar la IP virtual.
-
-**3.2 Windows (los 3 PCs):** las APIs deben escuchar en `0.0.0.0` y el firewall
-debe dejar entrar a las VMs (PowerShell como administrador):
-
-```powershell
-python app.py --host 0.0.0.0 --port 5000 --nombre pc1-5000
-python app.py --host 0.0.0.0 --port 5001 --nombre pc1-5001
-New-NetFirewallRule -DisplayName "Flask Farmacia" -Direction Inbound -Protocol TCP -LocalPort 5000,5001 -RemoteAddress 10.79.4.0/22 -Action Allow
-```
-
-**3.3 VM Ubuntu (en los 3 PCs):**
-
-```bash
-sudo apt update && sudo apt install -y docker.io docker-compose-v2 keepalived curl
-# copiar las carpetas nginx/ y keepalived/ del repo a la VM
-cd nginx && sudo docker compose up -d          # NGINX en el puerto 90
-curl http://127.0.0.1:90/health                # -> OK
-curl http://127.0.0.1:90/api/health            # repetir: X-Server va rotando pc1/pc2/pc3 · 5000/5001
-
-sudo cp ../keepalived/check_nginx.sh /etc/keepalived/ && sudo chmod +x /etc/keepalived/check_nginx.sh
-# UNO de estos según el PC:
-sudo cp ../keepalived/keepalived-server1-master.conf  /etc/keepalived/keepalived.conf   # PC 10.79.5.86
-sudo cp ../keepalived/keepalived-server2-backup1.conf /etc/keepalived/keepalived.conf   # PC 10.79.4.177
-sudo cp ../keepalived/keepalived-server3-backup2.conf /etc/keepalived/keepalived.conf   # PC 10.79.7.16
-sudo systemctl enable keepalived && sudo systemctl restart keepalived
-ip a | grep 10.79.7.200       # solo la VM que tiene la IP virtual la muestra
-```
-
-> Si la IP virtual aparece en **dos** VMs a la vez, la red bloquea multicast:
-> descomenten el bloque `unicast_*` de los 3 `keepalived-*.conf` con las IPs
-> puente de las VMs (`ip a` en cada una).
-> Si editan los archivos en Windows, guárdenlos con fin de línea **LF**
-> (con CRLF `check_nginx.sh` falla siempre). El `.gitattributes` ya lo fuerza.
-
-**Prueba de failover** (desde Windows: `curl http://10.79.7.200:90/api/health`;
-en las VMs: `sudo journalctl -u keepalived -f`):
-1. `sudo docker stop balanceador_nginx` en la VM del PC1 → la IP pasa al ESCLAVO 1.
-2. Lo mismo en la VM del PC2 → pasa al ESCLAVO 2.
-3. `sudo docker start balanceador_nginx` en la VM del PC1 → **vuelve al MASTER**.
-4. Detener los 3 → Flutter muestra **mantenimiento**; al levantar uno, la app vuelve sola.
+Cada respuesta trae la cabecera **`X-Server`** (`cliente-5000` / `server1-5001`) y, al pasar
+por NGINX, **`X-Upstream`** con la IP:puerto que respondió.
+`03_pruebas_controles.sql` intenta 14 operaciones inválidas y muestra que la BD las rechaza.
 
 ## 4. App Flutter (cliente 10.79.7.180)
 
