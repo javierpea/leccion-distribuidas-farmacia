@@ -1,0 +1,12 @@
+# ARCHIVO GENERADO por aplicar_ips.py (edite ips.env, no este archivo)
+# NGINX balanceador (MISMO archivo en los 3 servidores)
+#   cd nginx && sudo docker compose up -d
+services:
+  nginx:
+    image: nginx:latest
+    container_name: balanceador_nginx
+    ports:
+      - "{{PUERTO_NGINX}}:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped

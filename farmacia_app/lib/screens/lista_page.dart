@@ -5,10 +5,18 @@ import 'package:flutter/material.dart';
 import '../config.dart';
 import '../models/medicamento.dart';
 import '../services/api_service.dart';
+import '../services/sesion.dart';
 import '../utils/validadores.dart';
+import '../widgets/menu_usuario.dart';
+import 'catalogo_page.dart';
 import 'concurrencia_page.dart';
+import 'detalle_page.dart';
 import 'form_page.dart';
+import 'usuarios_page.dart';
 
+/// Inventario completo (ADMIN y FARMACEUTICO).
+///   ADMIN:        crear, editar, dar de baja, stock, usuarios, pruebas.
+///   FARMACEUTICO: ver todo, ver detalle y despachar / ingresar stock.
 class ListaPage extends StatefulWidget {
   const ListaPage({super.key});
 
@@ -26,6 +34,8 @@ class _ListaPageState extends State<ListaPage> {
   String? _error;
   String _servidor = '-';
 
+  bool get _esAdmin => Sesion.actual?.esAdmin ?? false;
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +50,7 @@ class _ListaPageState extends State<ListaPage> {
   }
 
   Future<void> _cargar() async {
+    if (!mounted) return;
     setState(() {
       _cargando = true;
       _error = null;
@@ -48,22 +59,30 @@ class _ListaPageState extends State<ListaPage> {
       final r = _soloAlertas
           ? await ApiService.alertas()
           : await ApiService.listar(q: _busqueda.text, estado: _estado);
+      if (!mounted) return;
       setState(() {
         _items = r.datos;
         _servidor = r.servidor;
       });
     } on ApiException catch (e) {
-      setState(() => _error = e.mensaje);
+      if (mounted) setState(() => _error = e.mensaje);
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
   }
 
   void _snack(String texto, {bool error = false}) {
+    if (!mounted) return; // p. ej. la sesión expiró y se volvió al login
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(texto),
       backgroundColor: error ? Colors.red.shade700 : null,
     ));
+  }
+
+  Future<void> _verDetalle(Medicamento m) async {
+    await Navigator.push(context,
+        MaterialPageRoute(builder: (_) => DetallePage(id: m.id, completo: true)));
+    _cargar();
   }
 
   Future<void> _abrirForm([Medicamento? m]) async {
@@ -124,7 +143,7 @@ class _ListaPageState extends State<ListaPage> {
       // 409 stock: otro usuario despachó antes (el stock que vimos ya no existe)
       _snack('${e.mensaje}  (${e.servidor})', error: true);
     }
-    _cargar();
+    if (mounted) _cargar();
   }
 
   Future<void> _eliminar(Medicamento m) async {
@@ -180,7 +199,7 @@ class _ListaPageState extends State<ListaPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Farmacia · Medicamentos'),
+        title: Text(_esAdmin ? 'Inventario · Administrador' : 'Inventario · Farmacéutico'),
         actions: [
           IconButton(
             tooltip: 'Alertas (stock bajo / por vencer)',
@@ -191,20 +210,39 @@ class _ListaPageState extends State<ListaPage> {
             },
           ),
           IconButton(
-            tooltip: 'Pruebas de concurrencia',
-            icon: const Icon(Icons.bolt),
-            onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const ConcurrenciaPage()))
-                .then((_) => _cargar()),
+            tooltip: 'Ver catálogo (como cliente)',
+            icon: const Icon(Icons.storefront),
+            onPressed: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const CatalogoPage())),
           ),
-          IconButton(tooltip: 'Servidor', icon: const Icon(Icons.settings), onPressed: _configurarUrl),
+          if (_esAdmin) ...[
+            IconButton(
+              tooltip: 'Usuarios y roles',
+              icon: const Icon(Icons.manage_accounts),
+              onPressed: () => Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => const UsuariosPage())),
+            ),
+            IconButton(
+              tooltip: 'Pruebas de concurrencia',
+              icon: const Icon(Icons.bolt),
+              onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const ConcurrenciaPage()))
+                  .then((_) => _cargar()),
+            ),
+            IconButton(tooltip: 'Servidor', icon: const Icon(Icons.settings), onPressed: _configurarUrl),
+          ],
+          const MenuUsuario(),
+          const SizedBox(width: 8),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _abrirForm(),
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo'),
-      ),
+      // Solo el ADMIN puede registrar medicamentos
+      floatingActionButton: _esAdmin
+          ? FloatingActionButton.extended(
+              onPressed: () => _abrirForm(),
+              icon: const Icon(Icons.add),
+              label: const Text('Nuevo'),
+            )
+          : null,
       body: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -295,6 +333,8 @@ class _ListaPageState extends State<ListaPage> {
               PopupMenuButton<String>(
                 onSelected: (op) {
                   switch (op) {
+                    case 'detalle':
+                      _verDetalle(m);
                     case 'editar':
                       _abrirForm(m);
                     case 'salida':
@@ -305,15 +345,23 @@ class _ListaPageState extends State<ListaPage> {
                       _eliminar(m);
                   }
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'editar', child: Text('Editar')),
-                  PopupMenuItem(value: 'salida', child: Text('Despachar (−)')),
-                  PopupMenuItem(value: 'entrada', child: Text('Ingresar stock (+)')),
-                  PopupMenuItem(value: 'eliminar', child: Text('Dar de baja')),
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'detalle', child: Text('Ver detalle')),
+                  if (_esAdmin) const PopupMenuItem(value: 'editar', child: Text('Editar')),
+                  const PopupMenuItem(value: 'salida', child: Text('Despachar (−)')),
+                  const PopupMenuItem(value: 'entrada', child: Text('Ingresar stock (+)')),
+                  if (_esAdmin) const PopupMenuItem(value: 'eliminar', child: Text('Dar de baja')),
                 ],
               ),
             ]),
-            onTap: () => _abrirForm(m),
+            // ADMIN edita; FARMACEUTICO ve el detalle
+            onTap: () {
+              if (_esAdmin) {
+                _abrirForm(m);
+              } else {
+                _verDetalle(m);
+              }
+            },
           );
         },
       ),

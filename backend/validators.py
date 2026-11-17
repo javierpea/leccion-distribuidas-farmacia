@@ -202,7 +202,7 @@ VALIDADORES = {
     "precio_venta": lambda v: decimal_positivo(v, "precio_venta"),
     "requiere_receta": lambda v: booleano(v, "requiere_receta"),
     "estado": lambda v: opcion(v, "estado", ESTADOS),
-    "version": lambda v: entero(v, "version", 1, 2_147_483_647),
+    "version": lambda v: entero(v, "version", 1, 2**63 - 1),
 }
 
 
@@ -285,3 +285,158 @@ def validar_busqueda(texto):
     if not RE_BUSQUEDA.match(texto.strip()):
         return None, "La búsqueda solo admite letras, números, espacios y guion (máx. 50)"
     return texto.strip(), None
+
+
+# =====================================================================
+# USUARIOS Y LOGIN (mismas reglas que dbo.usuarios en 01_schema.sql)
+# =====================================================================
+RE_USUARIO = re.compile(r"^[a-z][a-z0-9._]{3,29}$")
+RE_EMAIL = re.compile(r"^[a-z0-9._+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$")
+RE_TOKEN = re.compile(r"^[0-9A-F]{64}$")
+RE_CODE_VERIFIER = re.compile(r"^[A-Za-z0-9\-._~]{43,128}$")
+ROLES = {"ADMIN", "FARMACEUTICO", "CLIENTE"}
+PROVEEDORES_SOCIALES = {"GOOGLE", "FACEBOOK"}
+
+
+def usuario(valor):
+    if not isinstance(valor, str):
+        return None, "usuario debe ser texto"
+    v = valor.strip().lower()
+    if not v:
+        return None, "usuario es obligatorio"
+    if not RE_USUARIO.match(v):
+        return None, ("usuario: 4 a 30 caracteres, empieza con letra; solo minúsculas, "
+                      "números, punto y guion bajo")
+    return v, None
+
+
+def password(valor):
+    if not isinstance(valor, str) or not valor:
+        return None, "La contraseña es obligatoria"
+    if " " in valor:
+        return None, "La contraseña no puede tener espacios"
+    if not (8 <= len(valor) <= 50):
+        return None, "La contraseña debe tener entre 8 y 50 caracteres"
+    if not re.search(r"[A-Za-z]", valor) or not re.search(r"[0-9]", valor):
+        return None, "La contraseña debe tener letras y números"
+    return valor, None
+
+
+def email(valor):
+    if valor is None or (isinstance(valor, str) and valor.strip() == ""):
+        return None, None  # opcional
+    if not isinstance(valor, str):
+        return None, "email debe ser texto"
+    v = valor.strip().lower()
+    if len(v) > 100 or not RE_EMAIL.match(v) or ".." in v:
+        return None, "Correo inválido (ejemplo: nombre@correo.com)"
+    return v, None
+
+
+def _validar_campos(datos, permitidos, requeridos, validadores):
+    if not isinstance(datos, dict):
+        return {}, {"_general": "El cuerpo debe ser un objeto JSON"}
+    errores, limpio = {}, {}
+    for campo in datos:
+        if campo not in permitidos:
+            errores[campo] = "Campo no permitido"
+    for campo in permitidos:
+        valor = datos.get(campo)
+        if valor is None or (isinstance(valor, str) and valor.strip() == "" and campo != "email"):
+            if campo in requeridos:
+                errores[campo] = f"{campo} es obligatorio"
+            continue
+        limpio_valor, error = validadores[campo](valor)
+        if error:
+            errores[campo] = error
+        elif limpio_valor is not None:
+            limpio[campo] = limpio_valor
+    return limpio, errores
+
+
+VALIDADORES_USUARIO = {
+    "usuario": usuario,
+    "password": password,
+    "nombre_completo": lambda v: texto_solo_letras(v, "nombre_completo", 3, 100),
+    "email": email,
+    "rol": lambda v: opcion(v, "rol", ROLES),
+    "estado": lambda v: booleano(v, "estado"),
+    "desbloquear": lambda v: booleano(v, "desbloquear"),
+    "version": lambda v: entero(v, "version", 1, 2**63 - 1),
+}
+
+
+def validar_login(datos):
+    """No revela las reglas: solo que vengan los dos campos."""
+    if not isinstance(datos, dict):
+        return {}, {"_general": "El cuerpo debe ser un objeto JSON"}
+    errores = {}
+    u, p = datos.get("usuario"), datos.get("password")
+    if not isinstance(u, str) or not u.strip() or len(u.strip()) > 100:
+        errores["usuario"] = "Ingrese su usuario o correo"
+    if not isinstance(p, str) or not p or len(p) > 100:
+        errores["password"] = "Ingrese su contraseña"
+    if errores:
+        return {}, errores
+    return {"usuario": u.strip().lower(), "password": p}, {}
+
+
+def validar_registro(datos):
+    return _validar_campos(datos, ["usuario", "password", "nombre_completo", "email"],
+                           ["usuario", "password", "nombre_completo"], VALIDADORES_USUARIO)
+
+
+def validar_usuario_admin(datos, es_actualizacion=False):
+    if es_actualizacion:
+        permitidos = ["nombre_completo", "email", "rol", "estado", "version",
+                      "password", "desbloquear"]
+        requeridos = ["nombre_completo", "rol", "estado", "version"]
+    else:
+        permitidos = ["usuario", "password", "nombre_completo", "email", "rol", "estado"]
+        requeridos = ["usuario", "password", "nombre_completo", "rol"]
+    return _validar_campos(datos, permitidos, requeridos, VALIDADORES_USUARIO)
+
+
+def validar_social(datos, redirect_uri):
+    if not isinstance(datos, dict):
+        return {}, {"_general": "El cuerpo debe ser un objeto JSON"}
+    errores, limpio = {}, {}
+    prov, err = opcion(datos.get("proveedor") or "", "proveedor", PROVEEDORES_SOCIALES)
+    if err:
+        errores["proveedor"] = err
+    else:
+        limpio["proveedor"] = prov
+    code = datos.get("code")
+    if not isinstance(code, str) or not (10 <= len(code) <= 2048) or any(c.isspace() for c in code):
+        errores["code"] = "Código de autorización inválido"
+    else:
+        limpio["code"] = code
+    verificador = datos.get("code_verifier")
+    if verificador is not None:
+        if not isinstance(verificador, str) or not RE_CODE_VERIFIER.match(verificador):
+            errores["code_verifier"] = "code_verifier inválido"
+        else:
+            limpio["code_verifier"] = verificador
+    if datos.get("redirect_uri") != redirect_uri:
+        errores["redirect_uri"] = "redirect_uri no coincide con la configuración de la API"
+    return limpio, errores
+
+
+def nombre_para_bd(texto, respaldo):
+    """Deja solo letras y espacios (los nombres de Google/Facebook pueden
+    traer números, guiones o emojis que la BD rechazaría)."""
+    limpio = re.sub(rf"[^{LETRA} ]", " ", texto or "")
+    limpio = limpiar_espacios(limpio)[:100].strip()
+    return limpio if len(limpio) >= 3 else respaldo
+
+
+def usuario_sugerido(email_valor, nombre, proveedor):
+    """juan.perez@gmail.com -> 'juan.perez'. La BD agrega 2, 3... si ya existe."""
+    base = (email_valor or "").split("@")[0] or normalizar_nombre(nombre or "").replace(" ", ".")
+    base = re.sub(r"[^a-z0-9._]", "", normalizar_nombre(base).replace(" ", "."))
+    base = base.strip("._")
+    if not base or not base[0].isalpha():
+        base = proveedor.lower() + base
+    if len(base) < 4:
+        base += "user"
+    return base[:25]

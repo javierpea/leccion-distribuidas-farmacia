@@ -1,5 +1,6 @@
+# ARCHIVO GENERADO por aplicar_ips.py (edite ips.env, no este archivo)
 # NGINX balanceador (MISMO archivo en los 3 servidores)
-#   cd nginx && docker compose up -d
+#   cd nginx && sudo docker compose up -d
 services:
   nginx:
     image: nginx:latest

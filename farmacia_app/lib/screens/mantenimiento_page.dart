@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../config.dart';
 import '../services/api_service.dart';
 
 /// Se muestra encima de toda la app cuando NINGÚN servidor responde
@@ -19,7 +18,6 @@ class _MantenimientoPageState extends State<MantenimientoPage> {
   static const _intervalo = 5;
   Timer? _timer;
   int _segundos = _intervalo;
-  int _intentos = 0;
   bool _probando = false;
 
   @override
@@ -49,7 +47,6 @@ class _MantenimientoPageState extends State<MantenimientoPage> {
     if (!mounted) return;
     setState(() {
       _probando = false;
-      _intentos++;
       _segundos = _intervalo;
     });
   }
@@ -73,8 +70,8 @@ class _MantenimientoPageState extends State<MantenimientoPage> {
                     style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 12),
                 const Text(
-                  'Los servidores de la farmacia no están disponibles en este momento. '
-                  'Estamos trabajando para restablecer el servicio.',
+                  'Estamos realizando tareas de mantenimiento para mejorar el servicio. '
+                  'La aplicación volverá a estar disponible en unos momentos.',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -85,16 +82,13 @@ class _MantenimientoPageState extends State<MantenimientoPage> {
                     Text('Comprobando servidores...'),
                   ])
                 else
-                  Text('Reintentando en $_segundos s  ·  intentos: $_intentos'),
+                  Text('Reintentando en $_segundos s'),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: _probando ? null : _reintentar,
                   icon: const Icon(Icons.refresh),
                   label: const Text('Reintentar ahora'),
                 ),
-                const SizedBox(height: 24),
-                Text(AppConfig.baseUrl,
-                    style: TextStyle(fontSize: 12, color: esquema.outline)),
               ]),
             ),
           ),

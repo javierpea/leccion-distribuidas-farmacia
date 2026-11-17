@@ -1,7 +1,15 @@
 /* =====================================================================
-   Datos de prueba (20 medicamentos)
-     sqlcmd -S "(localdb)\MSSQLLocalDB" -E -f 65001 -i 02_datos.sql
+   DATOS DE PRUEBA: 20 medicamentos + 3 usuarios (uno por rol)
+     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 03_datos.sql
+
+   Usuarios (contraseñas guardadas con SHA2_512 + sal, nunca en texto):
+     admin         / Admin123     -> ADMIN         (CRUD completo + usuarios)
+     farmaceutico  / Farma123     -> FARMACEUTICO  (ver todo + despachar/ingresar stock)
+     cliente       / Cliente123   -> CLIENTE       (catálogo y detalle)
    ===================================================================== */
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
 USE AppDistribuidas_2026_DB;
 GO
 SET NOCOUNT ON;
@@ -31,9 +39,20 @@ VALUES
  ('MED-0018',N'Vitamina C Efervescente',N'Ácido ascórbico',N'Bayer','1 g','TABLETA','1823-MEE-1538','L2026J02','2026-04-04','2027-10-04',160,25,0.18,0.40,0),
  ('MED-0019',N'Dexametasona Ampolla',N'Dexametasona',N'Sanderson','4 mg/ml','INYECTABLE','1924-MEE-1639','L2026K01','2026-10-01','2028-10-01',8,10,0.70,1.50,1),
  ('MED-0020',N'Prueba Concurrencia',N'Paracetamol',N'Genfar','500 mg','TABLETA','2025-MEE-1740','L2026K02','2026-10-10','2028-10-10',10,2,0.05,0.10,0);
-
-DECLARE @total INT = (SELECT COUNT(*) FROM dbo.medicamentos);
-PRINT 'Datos cargados: ' + CAST(@total AS VARCHAR(10)) + ' medicamentos';
 GO
 /* MED-0019 queda bajo stock mínimo (alertas).
    MED-0020 tiene 10 unidades: úsenlo para la prueba de concurrencia. */
+
+-- Usuarios: se crean con el procedimiento (así la contraseña queda con hash y sal)
+EXEC dbo.sp_usuario_crear @usuario = 'admin', @password = N'Admin123',
+     @nombre_completo = N'Administrador del Sistema', @email = 'admin@farmacia.com', @rol = 'ADMIN';
+EXEC dbo.sp_usuario_crear @usuario = 'farmaceutico', @password = N'Farma123',
+     @nombre_completo = N'María López', @email = 'farmaceutico@farmacia.com', @rol = 'FARMACEUTICO';
+EXEC dbo.sp_usuario_crear @usuario = 'cliente', @password = N'Cliente123',
+     @nombre_completo = N'Juan Pérez', @email = 'cliente@farmacia.com', @rol = 'CLIENTE';
+GO
+
+DECLARE @m INT = (SELECT COUNT(*) FROM dbo.medicamentos),
+        @u INT = (SELECT COUNT(*) FROM dbo.usuarios);
+PRINT CONCAT('Datos cargados: ', @m, ' medicamentos y ', @u, ' usuarios');
+GO

@@ -1,21 +1,41 @@
 /* =====================================================================
-   FARMACIA - GRUPO 3 - TABLA: dbo.medicamentos
-   Motor: SQL Server (LocalDB / Express / Developer)
-   Base:  AppDistribuidas_2026_DB
+   FARMACIA - GRUPO 3 - ESQUEMA COMPLETO
+   Motor: SQL Server Express / Developer   Base: AppDistribuidas_2026_DB
 
-   Defensa en profundidad: TODOS los controles que valida el backend
-   (Flask) también están aquí. Si uno falla, el otro lo detiene.
+   Tablas:
+     dbo.medicamentos       catálogo (con ROWVERSION para concurrencia)
+     dbo.usuarios           login con roles ADMIN / FARMACEUTICO / CLIENTE
+     dbo.tokens             tokens de sesión (Unidad 3: token temporal)
+     dbo.movimientos_stock  quién despachó / ingresó stock y cuándo
 
-   Ejecutar (SSMS: abrir y F5)  o:
-     sqlcmd -S "(localdb)\MSSQLLocalDB" -E -f 65001 -i 01_schema.sql
+   Defensa en profundidad: TODOS los controles que valida la app Flutter
+   y el backend (Flask) también están aquí. Si uno falla, el otro lo detiene.
+
+   ORDEN DE EJECUCIÓN (en el equipo de la BD):
+     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 01_schema.sql
+     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 02_vistas_procedimientos.sql
+     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 03_datos.sql
+   ¡OJO! Volver a ejecutar este archivo BORRA todos los datos.
    ===================================================================== */
+SET QUOTED_IDENTIFIER ON;   -- necesario para los índices filtrados (email único)
+SET ANSI_NULLS ON;
+GO
+IF DB_ID('AppDistribuidas_2026_DB') IS NULL
+    CREATE DATABASE AppDistribuidas_2026_DB;
+GO
 USE AppDistribuidas_2026_DB;
 GO
 
-IF OBJECT_ID('dbo.medicamentos', 'U') IS NOT NULL
-    DROP TABLE dbo.medicamentos;
+-- Borrar en orden (primero las tablas que tienen llaves foráneas)
+IF OBJECT_ID('dbo.tokens', 'U')            IS NOT NULL DROP TABLE dbo.tokens;
+IF OBJECT_ID('dbo.movimientos_stock', 'U') IS NOT NULL DROP TABLE dbo.movimientos_stock;
+IF OBJECT_ID('dbo.usuarios', 'U')          IS NOT NULL DROP TABLE dbo.usuarios;
+IF OBJECT_ID('dbo.medicamentos', 'U')      IS NOT NULL DROP TABLE dbo.medicamentos;
 GO
 
+/* =====================================================================
+   1) MEDICAMENTOS
+   ===================================================================== */
 CREATE TABLE dbo.medicamentos (
     id                  INT IDENTITY(1,1) NOT NULL,
 
@@ -51,7 +71,6 @@ CREATE TABLE dbo.medicamentos (
     estado              VARCHAR(10) NOT NULL CONSTRAINT df_med_estado DEFAULT ('ACTIVO'),
 
     -- Concurrencia optimista: SQL Server la cambia SOLO en cada UPDATE
-    -- (igual que la columna Versions de facturación)
     version             ROWVERSION NOT NULL,
     creado_en           DATETIME2(0) NOT NULL CONSTRAINT df_med_creado DEFAULT (SYSDATETIME()),
     actualizado_en      DATETIME2(0) NOT NULL CONSTRAINT df_med_actualizado DEFAULT (SYSDATETIME()),
@@ -119,14 +138,133 @@ CREATE TABLE dbo.medicamentos (
     CONSTRAINT chk_estado_valido     CHECK (estado IN ('ACTIVO','INACTIVO','VENCIDO','RETIRADO'))
 );
 GO
-
 CREATE INDEX ix_medicamentos_estado ON dbo.medicamentos (estado);
 GO
 
-/* ---------------------------------------------------------------------
+/* =====================================================================
+   2) USUARIOS  (Unidad 3 - Práctica Final: tabla Usuarios con Rol)
+      - La contraseña NUNCA se guarda en texto plano: se guarda
+        SHA2_512(sal + contraseña) con una sal aleatoria por usuario.
+      - Las cuentas de Google/Facebook no tienen contraseña: se
+        identifican por proveedor + proveedor_id.
+   ===================================================================== */
+CREATE TABLE dbo.usuarios (
+    id                 INT IDENTITY(1,1) NOT NULL,
+    -- Nombre de usuario para iniciar sesión: minúsculas, números, punto y _
+    usuario            VARCHAR(30)   COLLATE Latin1_General_100_CI_AI NOT NULL,
+    password_hash      VARBINARY(64) NULL,
+    password_salt      VARBINARY(16) NULL,
+    -- Solo letras y espacios
+    nombre_completo    NVARCHAR(100) COLLATE Latin1_General_100_CI_AI NOT NULL,
+    email              VARCHAR(100)  COLLATE Latin1_General_100_CI_AI NULL,
+    rol                VARCHAR(15)   NOT NULL CONSTRAINT df_usu_rol DEFAULT ('CLIENTE'),
+    proveedor          VARCHAR(10)   NOT NULL CONSTRAINT df_usu_proveedor DEFAULT ('LOCAL'),
+    proveedor_id       VARCHAR(100)  NULL,
+    estado             BIT           NOT NULL CONSTRAINT df_usu_estado DEFAULT (1),
+    -- Control de fuerza bruta: 5 intentos fallidos = bloqueado 5 minutos
+    intentos_fallidos  TINYINT       NOT NULL CONSTRAINT df_usu_intentos DEFAULT (0),
+    bloqueado_hasta    DATETIME2(0)  NULL,
+    ultimo_acceso      DATETIME2(0)  NULL,
+    -- Concurrencia optimista (dos admins editando el mismo usuario)
+    version            ROWVERSION    NOT NULL,
+    creado_en          DATETIME2(0)  NOT NULL CONSTRAINT df_usu_creado DEFAULT (SYSDATETIME()),
+    actualizado_en     DATETIME2(0)  NOT NULL CONSTRAINT df_usu_actualizado DEFAULT (SYSDATETIME()),
+
+    CONSTRAINT pk_usuarios PRIMARY KEY (id),
+    CONSTRAINT uq_usuarios_usuario UNIQUE (usuario),
+
+    CONSTRAINT chk_usuario_formato CHECK (
+        usuario COLLATE Latin1_General_100_BIN2 LIKE '[a-z]%'
+        AND usuario COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^a-z0-9._]%'
+        AND LEN(usuario) BETWEEN 4 AND 30),
+
+    CONSTRAINT chk_usuario_nombre CHECK (
+        nombre_completo COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]%'
+        AND nombre_completo NOT LIKE N'%  %'
+        AND DATALENGTH(nombre_completo) = DATALENGTH(LTRIM(RTRIM(nombre_completo)))
+        AND LEN(nombre_completo) BETWEEN 3 AND 100),
+
+    CONSTRAINT chk_usuario_email CHECK (
+        email IS NULL OR (
+            email LIKE '_%@_%._%'
+            AND email NOT LIKE '%@%@%'
+            AND email NOT LIKE '%..%'
+            AND email COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^a-z0-9@._+-]%'
+            AND LEN(email) BETWEEN 6 AND 100)),
+
+    CONSTRAINT chk_usuario_rol CHECK (rol IN ('ADMIN','FARMACEUTICO','CLIENTE')),
+    CONSTRAINT chk_usuario_proveedor CHECK (proveedor IN ('LOCAL','GOOGLE','FACEBOOK')),
+
+    -- LOCAL: tiene contraseña. GOOGLE/FACEBOOK: tiene proveedor_id y no contraseña.
+    CONSTRAINT chk_usuario_credenciales CHECK (
+        (proveedor = 'LOCAL' AND password_hash IS NOT NULL AND password_salt IS NOT NULL
+             AND proveedor_id IS NULL)
+     OR (proveedor <> 'LOCAL' AND proveedor_id IS NOT NULL
+             AND password_hash IS NULL AND password_salt IS NULL)),
+
+    CONSTRAINT chk_usuario_intentos CHECK (intentos_fallidos BETWEEN 0 AND 10)
+);
+GO
+-- El email (si lo tiene) no se repite; la cuenta social tampoco
+CREATE UNIQUE INDEX uq_usuarios_email ON dbo.usuarios (email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX uq_usuarios_proveedor ON dbo.usuarios (proveedor, proveedor_id)
+    WHERE proveedor_id IS NOT NULL;
+GO
+
+/* =====================================================================
+   3) TOKENS  (Unidad 3: token temporal que valida la API en cada petición)
+      Se guarda el SHA2_256 del token: si alguien lee esta tabla no
+      puede usar los tokens. El token real solo lo tiene la app.
+   ===================================================================== */
+CREATE TABLE dbo.tokens (
+    id                INT IDENTITY(1,1) NOT NULL,
+    usuario_id        INT          NOT NULL,
+    token_hash        BINARY(32)   NOT NULL,
+    fecha_creacion    DATETIME2(0) NOT NULL CONSTRAINT df_tok_creacion DEFAULT (SYSDATETIME()),
+    fecha_expiracion  DATETIME2(0) NOT NULL,
+    activo            BIT          NOT NULL CONSTRAINT df_tok_activo DEFAULT (1),
+    ip_origen         VARCHAR(45)  NULL,
+
+    CONSTRAINT pk_tokens PRIMARY KEY (id),
+    CONSTRAINT fk_tokens_usuario FOREIGN KEY (usuario_id) REFERENCES dbo.usuarios (id),
+    CONSTRAINT uq_tokens_hash UNIQUE (token_hash),
+    CONSTRAINT chk_tokens_fechas CHECK (fecha_expiracion > fecha_creacion)
+);
+GO
+CREATE INDEX ix_tokens_usuario ON dbo.tokens (usuario_id, activo);
+GO
+
+/* =====================================================================
+   4) MOVIMIENTOS DE STOCK  (trazabilidad: quién despachó qué)
+   ===================================================================== */
+CREATE TABLE dbo.movimientos_stock (
+    id               INT IDENTITY(1,1) NOT NULL,
+    medicamento_id   INT          NOT NULL,
+    usuario_id       INT          NOT NULL,
+    operacion        VARCHAR(7)   NOT NULL,
+    cantidad         INT          NOT NULL,
+    stock_anterior   INT          NOT NULL,
+    stock_nuevo      INT          NOT NULL,
+    servidor         VARCHAR(30)  NULL,          -- qué API lo atendió (5000 / 5001)
+    fecha            DATETIME2(0) NOT NULL CONSTRAINT df_mov_fecha DEFAULT (SYSDATETIME()),
+
+    CONSTRAINT pk_movimientos PRIMARY KEY (id),
+    CONSTRAINT fk_mov_medicamento FOREIGN KEY (medicamento_id) REFERENCES dbo.medicamentos (id),
+    CONSTRAINT fk_mov_usuario     FOREIGN KEY (usuario_id)     REFERENCES dbo.usuarios (id),
+    CONSTRAINT chk_mov_operacion  CHECK (operacion IN ('ENTRADA','SALIDA')),
+    CONSTRAINT chk_mov_cantidad   CHECK (cantidad BETWEEN 1 AND 10000),
+    CONSTRAINT chk_mov_cuadre     CHECK (
+        stock_nuevo >= 0
+        AND stock_nuevo = stock_anterior + CASE WHEN operacion = 'ENTRADA' THEN cantidad ELSE -cantidad END)
+);
+GO
+CREATE INDEX ix_mov_medicamento ON dbo.movimientos_stock (medicamento_id, fecha);
+GO
+
+/* =====================================================================
    TRIGGERS: reglas que un CHECK no puede hacer (comparar con la fecha
    de hoy, comparar valor viejo vs nuevo). THROW cancela la operación.
-   --------------------------------------------------------------------- */
+   ===================================================================== */
 CREATE OR ALTER TRIGGER dbo.trg_medicamentos_insert
 ON dbo.medicamentos AFTER INSERT
 AS
@@ -171,13 +309,20 @@ BEGIN
 END;
 GO
 
-/* ---------------------------------------------------------------------
-   OPCIONAL (servidor SQL Server real del Server 3, NO en LocalDB):
-   usuario propio para la API, solo con permisos sobre esta tabla.
+-- Usuarios: el nombre de usuario no cambia y SIEMPRE debe quedar un ADMIN activo
+CREATE OR ALTER TRIGGER dbo.trg_usuarios_update_delete
+ON dbo.usuarios AFTER UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (SELECT 1 FROM inserted i JOIN deleted d ON d.id = i.id WHERE i.usuario <> d.usuario)
+        THROW 50010, 'El nombre de usuario no se puede modificar', 1;
 
-   CREATE LOGIN farmacia_app WITH PASSWORD = 'Farmacia2026*', CHECK_POLICY = OFF;
-   CREATE USER  farmacia_app FOR LOGIN farmacia_app;
-   GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.medicamentos TO farmacia_app;
-   --------------------------------------------------------------------- */
-PRINT 'Tabla dbo.medicamentos creada con sus controles.';
+    IF EXISTS (SELECT 1 FROM deleted WHERE rol = 'ADMIN' AND estado = 1)
+       AND NOT EXISTS (SELECT 1 FROM dbo.usuarios WHERE rol = 'ADMIN' AND estado = 1)
+        THROW 50011, 'Debe quedar al menos un administrador activo', 1;
+END;
+GO
+
+PRINT 'Esquema creado: medicamentos, usuarios, tokens, movimientos_stock.';
 GO

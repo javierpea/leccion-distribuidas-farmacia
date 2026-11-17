@@ -1,4 +1,5 @@
 #!/bin/bash
+# ARCHIVO GENERADO por aplicar_ips.py (edite ips.env, no este archivo)
 # Verificar que NGINX responde (Unidad 2 - Keepalived)
 # Copiar a /etc/keepalived/check_nginx.sh en la VM Ubuntu de los 3 PCs:
 #   sudo chmod +x /etc/keepalived/check_nginx.sh

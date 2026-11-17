@@ -86,6 +86,40 @@ class Validadores {
     return null;
   }
 
+
+  // ---------------- Usuarios y login ----------------
+  static final reUsuario = RegExp(r'^[a-z][a-z0-9._]{3,29}$');
+  static final reEmail =
+      RegExp(r'^[a-z0-9._+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$');
+  static const roles = ['ADMIN', 'FARMACEUTICO', 'CLIENTE'];
+
+  static String? usuario(String? v) {
+    final s = (v ?? '').trim();
+    if (s.isEmpty) return 'Usuario obligatorio';
+    if (!RegExp(r'^[a-z]').hasMatch(s)) return 'Debe empezar con una letra';
+    if (!reUsuario.hasMatch(s)) {
+      return '4 a 30: minúsculas, números, punto o guion bajo';
+    }
+    return null;
+  }
+
+  static String? email(String? v, {bool obligatorio = false}) {
+    final s = (v ?? '').trim();
+    if (s.isEmpty) return obligatorio ? 'Correo obligatorio' : null;
+    if (!reEmail.hasMatch(s) || s.contains('..')) return 'Correo inválido (nombre@correo.com)';
+    return null;
+  }
+
+  static String? password(String? v, {bool obligatorio = true}) {
+    final s = v ?? '';
+    if (s.isEmpty) return obligatorio ? 'Contraseña obligatoria' : null;
+    if (s.length < 8 || s.length > 50) return 'Entre 8 y 50 caracteres';
+    if (!RegExp(r'[A-Za-z]').hasMatch(s) || !RegExp(r'[0-9]').hasMatch(s)) {
+      return 'Debe tener letras y números';
+    }
+    return null;
+  }
+
   // ---------------- Formatters (bloquean el teclado) ----------------
   static final soloLetrasFmt = [
     FilteringTextInputFormatter.allow(RegExp('[$_letra ]')),
@@ -97,14 +131,23 @@ class Validadores {
     LengthLimitingTextInputFormatter(6),
   ];
 
-  /// Solo dígitos y un punto con máximo 2 decimales (convierte , en .)
+  /// Precios: solo dígitos y UN separador decimal con máximo 2 decimales.
+  /// Si se presiona coma o punto, siempre queda un punto. Cualquier otro
+  /// signo (o un segundo punto) no hace nada. ",5" se convierte en "0.5".
   static final decimalFmt = [
     TextInputFormatter.withFunction((viejo, nuevo) {
-      final texto = nuevo.text.replaceAll(',', '.');
-      if (RegExp(r'^[0-9]{0,5}(\.[0-9]{0,2})?$').hasMatch(texto)) {
-        return nuevo.copyWith(text: texto);
+      var texto = nuevo.text.replaceAll(',', '.');
+      var cursor = nuevo.selection.end;
+      if (texto.startsWith('.')) {
+        texto = '0$texto';
+        cursor += 1;
       }
-      return viejo;
+      if (!RegExp(r'^[0-9]{0,5}(\.[0-9]{0,2})?$').hasMatch(texto)) return viejo;
+      return TextEditingValue(
+        text: texto,
+        selection: TextSelection.collapsed(
+            offset: (cursor < 0 || cursor > texto.length) ? texto.length : cursor),
+      );
     }),
   ];
 
@@ -123,6 +166,33 @@ class Validadores {
 
   static final busquedaFmt = [
     FilteringTextInputFormatter.allow(RegExp('[${_letra}0-9 \\-]')),
+    LengthLimitingTextInputFormatter(50),
+  ];
+
+  /// Nombre de usuario: minúsculas, números, punto y guion bajo
+  static final usuarioFmt = [
+    TextInputFormatter.withFunction(
+        (viejo, nuevo) => nuevo.copyWith(text: nuevo.text.toLowerCase())),
+    FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9._]')),
+    LengthLimitingTextInputFormatter(30),
+  ];
+
+  /// Campo "usuario o correo" del login
+  static final loginFmt = [
+    FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9@._+\-]')),
+    LengthLimitingTextInputFormatter(100),
+  ];
+
+  static final emailFmt = [
+    TextInputFormatter.withFunction(
+        (viejo, nuevo) => nuevo.copyWith(text: nuevo.text.toLowerCase())),
+    FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9@._+\-]')),
+    LengthLimitingTextInputFormatter(100),
+  ];
+
+  /// Contraseña: sin espacios, máximo 50
+  static final passwordFmt = [
+    FilteringTextInputFormatter.deny(RegExp(r'\s')),
     LengthLimitingTextInputFormatter(50),
   ];
 }

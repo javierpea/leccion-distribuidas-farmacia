@@ -1,4 +1,5 @@
 import 'package:farmacia_app/utils/validadores.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -37,6 +38,57 @@ void main() {
       expect(Validadores.concentracion('250 mg/5 ml'), isNull);
       expect(Validadores.concentracion('500 MG'), isNull);
       expect(Validadores.concentracion('mucho'), isNotNull);
+    });
+
+    test('usuario, correo y contraseña', () {
+      expect(Validadores.usuario('juan.perez'), isNull);
+      expect(Validadores.usuario('1juan'), isNotNull);
+      expect(Validadores.usuario('abc'), isNotNull);
+      expect(Validadores.email('juan@correo.com'), isNull);
+      expect(Validadores.email(''), isNull); // opcional
+      expect(Validadores.email('juan@'), isNotNull);
+      expect(Validadores.password('Clave123'), isNull);
+      expect(Validadores.password('soloLetras'), isNotNull);
+      expect(Validadores.password('1234567'), isNotNull);
+    });
+  });
+
+  group('Teclado (formatters)', () {
+    TextEditingValue escribir(List<TextInputFormatter> fmts, String viejo, String nuevo) {
+      var valor = TextEditingValue(
+          text: nuevo, selection: TextSelection.collapsed(offset: nuevo.length));
+      final anterior = TextEditingValue(
+          text: viejo, selection: TextSelection.collapsed(offset: viejo.length));
+      for (final f in fmts) {
+        valor = f.formatEditUpdate(anterior, valor);
+      }
+      return valor;
+    }
+
+    test('decimal: la coma se convierte en punto', () {
+      expect(escribir(Validadores.decimalFmt, '12', '12,').text, '12.');
+      expect(escribir(Validadores.decimalFmt, '12', '12.').text, '12.');
+    });
+
+    test('decimal: un solo punto, máx. 2 decimales, sin letras ni signos', () {
+      expect(escribir(Validadores.decimalFmt, '12.5', '12.5.').text, '12.5');
+      expect(escribir(Validadores.decimalFmt, '12.5', '12.5,').text, '12.5');
+      expect(escribir(Validadores.decimalFmt, '12.55', '12.555').text, '12.55');
+      expect(escribir(Validadores.decimalFmt, '12', '12a').text, '12');
+      expect(escribir(Validadores.decimalFmt, '12', '12-').text, '12');
+      expect(escribir(Validadores.decimalFmt, '', ',').text, '0.');
+    });
+
+    test('enteros: solo dígitos', () {
+      expect(escribir(Validadores.soloEnterosFmt, '1', '1a').text, '1');
+      expect(escribir(Validadores.soloEnterosFmt, '1', '1.').text, '1');
+      expect(escribir(Validadores.soloEnterosFmt, '1', '12').text, '12');
+    });
+
+    test('letras: sin números ni signos', () {
+      expect(escribir(Validadores.soloLetrasFmt, 'Ana', 'Ana1').text, 'Ana');
+      expect(escribir(Validadores.soloLetrasFmt, 'Ana', 'Ana@').text, 'Ana');
+      expect(escribir(Validadores.soloLetrasFmt, 'Ana', 'Ana ñ').text, 'Ana ñ');
     });
   });
 }

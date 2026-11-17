@@ -50,6 +50,8 @@ class Cursor:
         return self._c.rowcount
 
     def _a_dict(self, fila):
+        if self._c.description is None:
+            return None
         columnas = [d[0] for d in self._c.description]
         datos = dict(zip(columnas, fila))
         if "version" in datos:
@@ -57,11 +59,27 @@ class Cursor:
         return datos
 
     def fetchone(self):
+        if self._c.description is None:   # el SQL no devolvió filas
+            return None
         fila = self._c.fetchone()
         return None if fila is None else self._a_dict(fila)
 
     def fetchall(self):
+        if self._c.description is None:
+            return []
         return [self._a_dict(f) for f in self._c.fetchall()]
+
+    def sp(self, nombre, **params):
+        """Ejecuta un procedimiento almacenado con parámetros con nombre:
+
+            cur.sp("sp_auth_login", usuario="admin", password="Admin123")
+            ->  EXEC dbo.sp_auth_login @usuario = ?, @password = ?
+        Los valores van como parámetros (?), nunca pegados al SQL."""
+        if not nombre.replace("_", "").isalnum():
+            raise ValueError("Nombre de procedimiento inválido")
+        asignaciones = ", ".join(f"@{k} = ?" for k in params)
+        sql = f"SET NOCOUNT ON; EXEC dbo.{nombre} {asignaciones}".rstrip()
+        return self.execute(sql, list(params.values()))
 
 
 @contextmanager

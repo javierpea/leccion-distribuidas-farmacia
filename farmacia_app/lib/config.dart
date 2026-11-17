@@ -1,14 +1,19 @@
+import 'config_red.dart';
+
 /// Configuración del cliente.
 ///
-/// El cliente SOLO conoce la IP VIRTUAL de Keepalived. Nunca apunta
-/// directo a un Flask: Nginx (en el nodo que tenga la VIP) balancea
-/// entre 10.79.5.86:5000 y 10.79.4.177:5001 (puerto 90).
+/// El cliente SOLO conoce la IP VIRTUAL de Keepalived (config_red.dart,
+/// generado desde ips.env con `python aplicar_ips.py`). Nunca apunta
+/// directo a un Flask: NGINX (en el nodo que tenga la IP virtual) reparte
+/// entre las dos APIs.
 class AppConfig {
-  static const String ipVirtualPorDefecto = 'http://10.79.7.200:90';
+  static const String ipVirtualPorDefecto = 'http://$ipVirtual:$puertoNginx';
 
-  /// Se puede cambiar en tiempo de ejecución (ícono ⚙ en la lista)
-  /// para probar directo contra un Flask, p. ej. http://10.79.5.86:5000
+  /// El administrador puede cambiarla en tiempo de ejecución (ícono ⚙)
+  /// para probar directo contra un Flask, p. ej. http://IP_API1:5000
   static String baseUrl = ipVirtualPorDefecto;
 
-  static const Duration timeout = Duration(seconds: 15);
+  /// Tiempo máximo por petición. Las consultas se reintentan una vez
+  /// (ver ApiService) para que un failover de Keepalived no se note.
+  static const Duration timeout = Duration(seconds: 6);
 }
