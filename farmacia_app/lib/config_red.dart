@@ -3,7 +3,7 @@
 //     python aplicar_ips.py
 
 /// IP virtual de Keepalived (la ÚNICA dirección que conoce la app).
-const String ipVirtual = '10.79.7.200';
+const String ipVirtual = '10.79.20.200';
 
 /// Puerto donde atiende NGINX en cada servidor.
 const int puertoNginx = 90;
