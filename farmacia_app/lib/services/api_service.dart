@@ -120,6 +120,10 @@ class ApiService {
           await Future.delayed(const Duration(seconds: 1));
           continue;
         }
+        if (_esCaida(e.status)) {
+          // Solo se ve en la consola de "flutter run" (diagnóstico)
+          debugPrint('[API] ${AppConfig.baseUrl}/api$ruta -> ${e.status} ${e.mensaje}');
+        }
         enMantenimiento.value = _esCaida(e.status);
         if (e.status == 401 && !_esRutaLogin(ruta) && Sesion.activa) {
           Sesion.cerrar();
