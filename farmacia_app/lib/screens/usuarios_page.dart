@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../models/usuario.dart';
 import '../services/api_service.dart';
 import '../utils/validadores.dart';
+import '../widgets/actualizacion_automatica.dart';
 import '../widgets/menu_usuario.dart';
 import 'usuario_form_page.dart';
 
@@ -17,7 +18,8 @@ class UsuariosPage extends StatefulWidget {
   State<UsuariosPage> createState() => _UsuariosPageState();
 }
 
-class _UsuariosPageState extends State<UsuariosPage> {
+class _UsuariosPageState extends State<UsuariosPage>
+    with ActualizacionAutomatica<UsuariosPage> {
   final _busqueda = TextEditingController();
   Timer? _debounce;
   List<Usuario> _items = [];
@@ -29,6 +31,18 @@ class _UsuariosPageState extends State<UsuariosPage> {
   void initState() {
     super.initState();
     _cargar();
+    iniciarActualizacionAutomatica();
+  }
+
+  @override
+  Future<void> refrescarEnSegundoPlano() async {
+    final r = await ApiService.usuarios(q: _busqueda.text, rol: _rol);
+    if (mounted) {
+      setState(() {
+        _items = r.datos;
+        _error = null;
+      });
+    }
   }
 
   @override

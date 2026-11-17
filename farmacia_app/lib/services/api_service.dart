@@ -143,6 +143,11 @@ class ApiService {
       throw ApiException(
           0, 'Sin conexión con ${AppConfig.baseUrl} (${e.message})',
           motivo: 'red');
+    } on Exception catch (e) {
+      // Cualquier otro fallo de red (conexión cortada, IP virtual cambiando
+      // de servidor...) también cuenta como "sin conexión"
+      throw ApiException(0, 'Sin conexión con ${AppConfig.baseUrl} ($e)',
+          motivo: 'red');
     }
 
     final servidor = r.headers['x-server'] ?? '?';
@@ -189,8 +194,8 @@ class ApiService {
     try {
       await _enviar('/health', () => http.get(_uri('/health')));
       return true;
-    } on ApiException {
-      return false;
+    } catch (_) {
+      return false; // nunca lanza: la pantalla de mantenimiento sigue reintentando
     }
   }
 

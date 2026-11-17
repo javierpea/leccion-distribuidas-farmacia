@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/catalogo.dart';
 import '../models/medicamento.dart';
 import '../services/api_service.dart';
+import '../widgets/actualizacion_automatica.dart';
 import '../widgets/menu_usuario.dart';
 
 /// Detalle de un medicamento.
@@ -19,7 +20,8 @@ class DetallePage extends StatefulWidget {
   State<DetallePage> createState() => _DetallePageState();
 }
 
-class _DetallePageState extends State<DetallePage> {
+class _DetallePageState extends State<DetallePage>
+    with ActualizacionAutomatica<DetallePage> {
   ItemCatalogo? _item;
   Medicamento? _med;
   List<Movimiento> _movs = [];
@@ -30,6 +32,30 @@ class _DetallePageState extends State<DetallePage> {
   void initState() {
     super.initState();
     _cargar();
+    iniciarActualizacionAutomatica(); // stock y precio cambian en vivo
+  }
+
+  @override
+  Future<void> refrescarEnSegundoPlano() async {
+    if (widget.completo) {
+      final r = await ApiService.obtener(widget.id);
+      final m = await ApiService.movimientos(widget.id);
+      if (mounted) {
+        setState(() {
+          _med = r.datos;
+          _movs = m.datos;
+          _error = null;
+        });
+      }
+    } else {
+      final r = await ApiService.detalleCatalogo(widget.id);
+      if (mounted) {
+        setState(() {
+          _item = r.datos;
+          _error = null;
+        });
+      }
+    }
   }
 
   Future<void> _cargar() async {

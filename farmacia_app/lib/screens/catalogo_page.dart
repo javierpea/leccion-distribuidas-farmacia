@@ -6,6 +6,7 @@ import '../models/catalogo.dart';
 import '../services/api_service.dart';
 import '../services/sesion.dart';
 import '../utils/validadores.dart';
+import '../widgets/actualizacion_automatica.dart';
 import '../widgets/menu_usuario.dart';
 import 'detalle_page.dart';
 
@@ -19,7 +20,8 @@ class CatalogoPage extends StatefulWidget {
   State<CatalogoPage> createState() => _CatalogoPageState();
 }
 
-class _CatalogoPageState extends State<CatalogoPage> {
+class _CatalogoPageState extends State<CatalogoPage>
+    with ActualizacionAutomatica<CatalogoPage> {
   final _busqueda = TextEditingController();
   Timer? _debounce;
   List<ItemCatalogo> _items = [];
@@ -30,6 +32,18 @@ class _CatalogoPageState extends State<CatalogoPage> {
   void initState() {
     super.initState();
     _cargar();
+    iniciarActualizacionAutomatica();
+  }
+
+  @override
+  Future<void> refrescarEnSegundoPlano() async {
+    final r = await ApiService.catalogo(q: _busqueda.text);
+    if (mounted) {
+      setState(() {
+        _items = r.datos;
+        _error = null;
+      });
+    }
   }
 
   @override

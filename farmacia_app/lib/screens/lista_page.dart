@@ -2,14 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../config.dart';
 import '../models/medicamento.dart';
 import '../services/api_service.dart';
 import '../services/sesion.dart';
 import '../utils/validadores.dart';
+import '../widgets/actualizacion_automatica.dart';
 import '../widgets/menu_usuario.dart';
 import 'catalogo_page.dart';
-import 'concurrencia_page.dart';
 import 'detalle_page.dart';
 import 'form_page.dart';
 import 'usuarios_page.dart';
@@ -24,7 +23,7 @@ class ListaPage extends StatefulWidget {
   State<ListaPage> createState() => _ListaPageState();
 }
 
-class _ListaPageState extends State<ListaPage> {
+class _ListaPageState extends State<ListaPage> with ActualizacionAutomatica<ListaPage> {
   final _busqueda = TextEditingController();
   Timer? _debounce;
   List<Medicamento> _items = [];
@@ -40,6 +39,20 @@ class _ListaPageState extends State<ListaPage> {
   void initState() {
     super.initState();
     _cargar();
+    iniciarActualizacionAutomatica(); // los cambios de otros usuarios aparecen solos
+  }
+
+  @override
+  Future<void> refrescarEnSegundoPlano() async {
+    final r = _soloAlertas
+        ? await ApiService.alertas()
+        : await ApiService.listar(q: _busqueda.text, estado: _estado);
+    if (!mounted) return;
+    setState(() {
+      _items = r.datos;
+      _servidor = r.servidor;
+      _error = null;
+    });
   }
 
   @override
@@ -169,32 +182,6 @@ class _ListaPageState extends State<ListaPage> {
     _cargar();
   }
 
-  Future<void> _configurarUrl() async {
-    final ctrl = TextEditingController(text: AppConfig.baseUrl);
-    final url = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('URL de la API'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: ctrl, decoration: const InputDecoration(border: OutlineInputBorder())),
-          const SizedBox(height: 8),
-          const Text('Use la IP VIRTUAL. Solo para pruebas apunte directo a un Flask.',
-              style: TextStyle(fontSize: 12)),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, AppConfig.ipVirtualPorDefecto),
-              child: const Text('IP virtual')),
-          FilledButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('Usar')),
-        ],
-      ),
-    );
-    if (url != null && Uri.tryParse(url)?.hasScheme == true) {
-      AppConfig.baseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
-      _cargar();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -222,14 +209,6 @@ class _ListaPageState extends State<ListaPage> {
               onPressed: () => Navigator.push(
                   context, MaterialPageRoute(builder: (_) => const UsuariosPage())),
             ),
-            IconButton(
-              tooltip: 'Pruebas de concurrencia',
-              icon: const Icon(Icons.bolt),
-              onPressed: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const ConcurrenciaPage()))
-                  .then((_) => _cargar()),
-            ),
-            IconButton(tooltip: 'Servidor', icon: const Icon(Icons.settings), onPressed: _configurarUrl),
           ],
           const MenuUsuario(),
           const SizedBox(width: 8),
@@ -283,7 +262,7 @@ class _ListaPageState extends State<ListaPage> {
           child: Row(children: [
             const Icon(Icons.dns, size: 14),
             const SizedBox(width: 4),
-            Text('Atendido por: $_servidor  ·  ${AppConfig.baseUrl}',
+            Text('Atendido por: $_servidor  ·  se actualiza solo',
                 style: const TextStyle(fontSize: 12)),
           ]),
         ),

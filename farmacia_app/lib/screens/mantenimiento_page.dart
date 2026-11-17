@@ -41,14 +41,19 @@ class _MantenimientoPageState extends State<MantenimientoPage> {
 
   Future<void> _reintentar() async {
     setState(() => _probando = true);
-    // Si responde, ApiService.enMantenimiento pasa a false y esta
-    // pantalla desaparece automáticamente.
-    await ApiService.health();
-    if (!mounted) return;
-    setState(() {
-      _probando = false;
-      _segundos = _intervalo;
-    });
+    try {
+      // Si responde, ApiService.enMantenimiento pasa a false y esta
+      // pantalla desaparece automáticamente.
+      await ApiService.health();
+    } finally {
+      // pase lo que pase, se vuelve a intentar en 5 s
+      if (mounted) {
+        setState(() {
+          _probando = false;
+          _segundos = _intervalo;
+        });
+      }
+    }
   }
 
   @override
@@ -79,7 +84,7 @@ class _MantenimientoPageState extends State<MantenimientoPage> {
                   const Row(mainAxisSize: MainAxisSize.min, children: [
                     SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                     SizedBox(width: 8),
-                    Text('Comprobando servidores...'),
+                    Text('Comprobando...'),
                   ])
                 else
                   Text('Reintentando en $_segundos s'),
