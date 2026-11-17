@@ -13,9 +13,9 @@
 set -e
 
 case "$1" in
-    1) CONF="keepalived-server1-master.conf" ;;
-    2) CONF="keepalived-server2-backup1.conf" ;;
-    3) CONF="keepalived-server3-backup2.conf" ;;
+    1) CONF="keepalived-server1-master.conf";  NODO="master" ;;
+    2) CONF="keepalived-server2-backup1.conf"; NODO="esclavo1" ;;
+    3) CONF="keepalived-server3-backup2.conf"; NODO="esclavo2" ;;
     *) echo "Uso: bash keepalived/instalar_nodo.sh <1|2|3>"; exit 1 ;;
 esac
 
@@ -27,8 +27,10 @@ if ! command -v docker > /dev/null || ! command -v keepalived > /dev/null; then
     sudo apt install -y docker.io docker-compose-v2 keepalived curl git
 fi
 
-echo ">> NGINX (Docker)"
+echo ">> NGINX (Docker) como $NODO"
 cd "$RAIZ/nginx"
+# Nombre del nodo: NGINX lo envía en la cabecera X-Nodo y la app lo muestra
+echo "NODO_NOMBRE=$NODO" > .env
 sudo docker compose up -d --force-recreate
 
 echo ">> Keepalived ($CONF)"

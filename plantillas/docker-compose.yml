@@ -5,6 +5,8 @@ services:
   nginx:
     image: nginx:latest
     container_name: balanceador_nginx
+    # master | esclavo1 | esclavo2  (lo escribe instalar_nodo.sh en nginx/.env)
+    hostname: ${NODO_NOMBRE:-nginx}
     ports:
       - "{{PUERTO_NGINX}}:8080"
     volumes:

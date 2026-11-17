@@ -150,11 +150,10 @@ class _ListaPageState extends State<ListaPage> with ActualizacionAutomatica<List
     if (cantidad == null) return;
     try {
       final r = await ApiService.moverStock(m.id, operacion, cantidad);
-      _snack('${r.mensaje}. Stock: ${r.datos.stockAnterior} → '
-          '${r.datos.medicamento.stock}  ·  ${r.servidor}');
+      _snack('${r.mensaje}. Stock: ${r.datos.stockAnterior} → ${r.datos.medicamento.stock}');
     } on ApiException catch (e) {
       // 409 stock: otro usuario despachó antes (el stock que vimos ya no existe)
-      _snack('${e.mensaje}  (${e.servidor})', error: true);
+      _snack(e.mensaje, error: true);
     }
     if (mounted) _cargar();
   }
@@ -175,9 +174,9 @@ class _ListaPageState extends State<ListaPage> with ActualizacionAutomatica<List
     if (ok != true) return;
     try {
       final r = await ApiService.eliminar(m.id, m.version);
-      _snack('${r.mensaje}  ·  ${r.servidor}');
+      _snack(r.mensaje);
     } on ApiException catch (e) {
-      _snack('${e.mensaje}  (${e.servidor})', error: true);
+      _snack(e.mensaje, error: true);
     }
     _cargar();
   }
@@ -262,7 +261,7 @@ class _ListaPageState extends State<ListaPage> with ActualizacionAutomatica<List
           child: Row(children: [
             const Icon(Icons.dns, size: 14),
             const SizedBox(width: 4),
-            Text('Atendido por: $_servidor  ·  se actualiza solo',
+            Text('Servidor: $_servidor  ·  se actualiza solo',
                 style: const TextStyle(fontSize: 12)),
           ]),
         ),

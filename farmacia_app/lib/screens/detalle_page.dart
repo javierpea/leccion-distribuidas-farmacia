@@ -223,8 +223,7 @@ class _DetallePageState extends State<DetallePage>
                   color: mv.operacion == 'SALIDA' ? Colors.red : Colors.green),
               title: Text('${mv.operacion} de ${mv.cantidad} · ${mv.stockAnterior} → ${mv.stockNuevo}'),
               subtitle: Text('${_fecha(mv.fecha)} ${mv.fecha.hour.toString().padLeft(2, '0')}:'
-                  '${mv.fecha.minute.toString().padLeft(2, '0')} · ${mv.usuario}'
-                  '${mv.servidor != null ? ' · ${mv.servidor}' : ''}'),
+                  '${mv.fecha.minute.toString().padLeft(2, '0')} · ${mv.usuario}'),
             )),
       ];
 }

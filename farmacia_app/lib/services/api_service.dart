@@ -140,26 +140,25 @@ class ApiService {
     try {
       r = await peticion().timeout(limite);
     } on TimeoutException {
-      throw ApiException(0, 'Tiempo de espera agotado (${AppConfig.baseUrl})',
-          motivo: 'red');
+      throw ApiException(0, 'El servidor no responde. Intente de nuevo.', motivo: 'red');
     } on http.ClientException catch (e) {
       // http 1.x envuelve SocketException en ClientException
-      throw ApiException(
-          0, 'Sin conexión con ${AppConfig.baseUrl} (${e.message})',
-          motivo: 'red');
+      debugPrint('[API] ${e.message}');
+      throw ApiException(0, 'Sin conexión con el servidor.', motivo: 'red');
     } on Exception catch (e) {
       // Cualquier otro fallo de red (conexión cortada, IP virtual cambiando
       // de servidor...) también cuenta como "sin conexión"
-      throw ApiException(0, 'Sin conexión con ${AppConfig.baseUrl} ($e)',
-          motivo: 'red');
+      debugPrint('[API] $e');
+      throw ApiException(0, 'Sin conexión con el servidor.', motivo: 'red');
     }
 
-    final servidor = r.headers['x-server'] ?? '?';
+    // Qué servidor (NGINX) atendió: Master, Esclavo 1 o Esclavo 2
+    final servidor = _nombreNodo(r.headers['x-nodo']) ?? r.headers['x-server'] ?? '?';
     Map<String, dynamic> cuerpo;
     try {
       cuerpo = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     } catch (_) {
-      throw ApiException(r.statusCode, 'Respuesta inválida (${r.statusCode})',
+      throw ApiException(r.statusCode, 'No se pudo completar la operación. Intente de nuevo.',
           servidor: servidor);
     }
 
@@ -170,13 +169,13 @@ class ApiService {
     final errores = <String, String>{};
     final e = cuerpo['errores'];
     if (e is Map) {
-      e.forEach((k, v) => errores[k.toString()] = v.toString());
+      e.forEach((k, v) => errores[k.toString()] = _limpiar(v.toString()));
     }
     final med = cuerpo['medicamento'];
     final usu = cuerpo['usuario'];
     throw ApiException(
       r.statusCode,
-      cuerpo['error']?.toString() ?? 'Error ${r.statusCode}',
+      _mensajeParaUsuario(r.statusCode, cuerpo['error']),
       motivo: cuerpo['motivo']?.toString() ?? '',
       errores: errores,
       medicamento:
@@ -185,6 +184,64 @@ class ApiService {
       servidor: servidor,
     );
   }
+
+  // ------------------------------------------------------------------
+  // Mensajes para el usuario: cortos, sin rutas, servidores ni nombres
+  // técnicos de campos (nombre_comercial -> Nombre comercial).
+  // ------------------------------------------------------------------
+  static const _campos = {
+    'nombre_comercial': 'Nombre comercial',
+    'principio_activo': 'Principio activo',
+    'laboratorio': 'Laboratorio',
+    'concentracion': 'Concentración',
+    'forma_farmaceutica': 'Forma farmacéutica',
+    'registro_sanitario': 'Registro sanitario',
+    'fecha_fabricacion': 'Fecha de fabricación',
+    'fecha_vencimiento': 'Fecha de vencimiento',
+    'stock_minimo': 'Stock mínimo',
+    'precio_compra': 'Precio de compra',
+    'precio_venta': 'Precio de venta',
+    'requiere_receta': 'Requiere receta',
+    'nombre_completo': 'Nombre completo',
+    'password': 'Contraseña',
+    'email': 'Correo',
+    'usuario': 'Usuario',
+    'codigo': 'Código',
+    'lote': 'Lote',
+    'stock': 'Stock',
+    'estado': 'Estado',
+    'rol': 'Rol',
+    'cantidad': 'Cantidad',
+  };
+
+  static String _limpiar(String texto) {
+    var t = texto
+        .replaceFirst(RegExp(r'^\[BD\]\s*'), '')
+        .replaceAll(RegExp(r'\s*\(\.env\)'), '')
+        .replaceAll(' en la API', '');
+    _campos.forEach((clave, nombre) {
+      t = t.replaceAll(RegExp('\\b$clave\\b'), nombre);
+    });
+    return t;
+  }
+
+  static String _mensajeParaUsuario(int status, Object? mensaje) {
+    if (status == 403) return 'No tiene permiso para realizar esta acción.';
+    if (status >= 500 || status == 405 || status == 413 || mensaje == null) {
+      return 'No se pudo completar la operación. Intente de nuevo.';
+    }
+    if (status == 404 && mensaje == 'Ruta no encontrada') {
+      return 'No se encontró la información solicitada.';
+    }
+    return _limpiar(mensaje.toString());
+  }
+
+  static String? _nombreNodo(String? nodo) => switch (nodo) {
+        'master' => 'Master',
+        'esclavo1' => 'Esclavo 1',
+        'esclavo2' => 'Esclavo 2',
+        _ => null,
+      };
 
   static List<T> _lista<T>(
           Map<String, dynamic> c, T Function(Map<String, dynamic>) f) =>

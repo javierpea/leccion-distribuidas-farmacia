@@ -1,3 +1,4 @@
 # Credenciales locales y archivos compilados
 backend/.env
 __pycache__/
+nginx/.env

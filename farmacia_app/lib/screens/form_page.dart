@@ -139,7 +139,7 @@ class _FormPageState extends State<FormPage> {
           : await ApiService.crear(_cuerpo());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${r.mensaje}  ·  atendido por ${r.servidor}')));
+          content: Text(r.mensaje)));
       Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -148,7 +148,7 @@ class _FormPageState extends State<FormPage> {
       } else {
         setState(() {
           _erroresServidor = e.errores;
-          _mensajeGeneral = '${e.mensaje}  (${e.servidor})';
+          _mensajeGeneral = e.mensaje;
         });
         _form.currentState!.validate(); // pinta errores del servidor
       }
@@ -165,14 +165,13 @@ class _FormPageState extends State<FormPage> {
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         icon: const Icon(Icons.sync_problem, color: Colors.orange, size: 40),
-        title: const Text('Conflicto de concurrencia'),
+        title: const Text('Otro usuario modificó este medicamento'),
         content: Text(
           '${e.mensaje}\n\n'
-          'Valores actuales en la base de datos:\n'
+          'Valores actuales:\n'
           '• Stock: ${actual.stock}\n'
           '• Precio venta: \$${actual.precioVenta.toStringAsFixed(2)}\n'
-          '• Estado: ${actual.estado}\n'
-          '• Versión: ${actual.version}',
+          '• Estado: ${actual.estado}',
         ),
         actions: [
           TextButton(
@@ -187,8 +186,7 @@ class _FormPageState extends State<FormPage> {
     if (recargar == true && mounted) {
       setState(() {
         _cargar(actual);
-        _mensajeGeneral = 'Se cargaron los datos actuales (versión ${actual.version}). '
-            'Revise y vuelva a guardar.';
+        _mensajeGeneral = 'Se cargaron los datos actuales. Revise y vuelva a guardar.';
       });
     }
   }

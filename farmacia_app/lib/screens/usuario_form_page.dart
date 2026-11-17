@@ -93,7 +93,7 @@ class _UsuarioFormPageState extends State<UsuarioFormPage> {
           : await ApiService.crearUsuario(_cuerpo());
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('${r.mensaje}  ·  ${r.servidor}')));
+          .showSnackBar(SnackBar(content: Text(r.mensaje)));
       Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -102,7 +102,7 @@ class _UsuarioFormPageState extends State<UsuarioFormPage> {
       } else {
         setState(() {
           _erroresServidor = e.errores;
-          _mensaje = '${e.mensaje}  (${e.servidor})';
+          _mensaje = e.mensaje;
         });
         _form.currentState!.validate();
       }
@@ -118,8 +118,8 @@ class _UsuarioFormPageState extends State<UsuarioFormPage> {
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         icon: const Icon(Icons.sync_problem, color: Colors.orange, size: 40),
-        title: const Text('Conflicto de concurrencia'),
-        content: Text('${e.mensaje}\n\nValores actuales en la base de datos:\n'
+        title: const Text('Otro administrador modificó este usuario'),
+        content: Text('${e.mensaje}\n\nValores actuales:\n'
             '• Nombre: ${actual.nombreCompleto}\n'
             '• Rol: ${actual.rolLegible}\n'
             '• Estado: ${actual.estado ? 'Activo' : 'Desactivado'}'),

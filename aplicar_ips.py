@@ -27,6 +27,7 @@ PLANTILLAS = RAIZ / "plantillas"
 
 OBLIGATORIAS = {
     "IP_SERVER1": "ip", "IP_SERVER2": "ip", "IP_SERVER3": "ip",
+    "IP_VM1": "ip", "IP_VM2": "ip", "IP_VM3": "ip",
     "IP_VIRTUAL": "ip", "MASCARA": "mascara", "INTERFAZ_VM": "interfaz",
     "PUERTO_NGINX": "puerto",
     "IP_API1": "ip", "PUERTO_API1": "puerto",
@@ -119,9 +120,12 @@ def main():
     escribir("nginx/nginx.conf", rellenar(plantilla("nginx.conf"), v))
     escribir("nginx/docker-compose.yml", rellenar(plantilla("docker-compose.yml"), v))
     escribir("keepalived/check_nginx.sh", rellenar(plantilla("check_nginx.sh"), v))
-    for archivo, nombre, rid, estado, prio, ip, desc in NODOS:
+    vms = [v["IP_VM1"], v["IP_VM2"], v["IP_VM3"]]
+    for n, (archivo, nombre, rid, estado, prio, ip, desc) in enumerate(NODOS):
+        otras = [x for i, x in enumerate(vms) if i != n]
         datos = dict(v, NOMBRE_NODO=nombre, ROUTER_ID=rid, ESTADO=estado,
-                     PRIORIDAD=prio, IP_NODO=v[ip], DESCRIPCION_NODO=desc)
+                     PRIORIDAD=prio, IP_NODO=v[ip], DESCRIPCION_NODO=desc,
+                     IP_VM_PROPIA=vms[n], IP_VM_PEER1=otras[0], IP_VM_PEER2=otras[1])
         escribir(f"keepalived/{archivo}", rellenar(plantilla("keepalived.conf"), datos))
     escribir("farmacia_app/lib/config_red.dart", rellenar(plantilla("config_red.dart"), v))
 
