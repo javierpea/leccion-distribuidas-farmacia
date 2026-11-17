@@ -1,0 +1,11 @@
+# NGINX balanceador (MISMO archivo en los 3 servidores)
+#   cd nginx && docker compose up -d
+services:
+  nginx:
+    image: nginx:latest
+    container_name: balanceador_nginx
+    ports:
+      - "90:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped

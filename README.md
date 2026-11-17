@@ -10,7 +10,7 @@ Base de datos: **`AppDistribuidas_2026_DB`** (la de la materia).
 farmacia_medicamentos/
 ├── database/   01_schema.sql · 02_datos.sql · 03_pruebas_controles.sql
 ├── backend/    app.py · validators.py · db.py · config.py · tests/
-├── nginx/      farmacia.conf
+├── nginx/      nginx.conf · docker-compose.yml
 ├── keepalived/ keepalived-server1-master.conf · -server2-backup1 · -server3-backup2 · check_nginx.sh
 └── farmacia_app/   (Flutter)
 ```
@@ -19,10 +19,10 @@ farmacia_medicamentos/
 
 | Equipo | IP | Rol | Servicios |
 |---|---|---|---|
-| Server 1 | 10.79.5.86 | **MASTER** (prioridad 150) | Flask :5000 · Nginx · Keepalived |
-| Server 2 | 10.79.4.177 | **ESCLAVO 1** (prioridad 120) | Flask :5001 · Nginx · Keepalived |
-| Server 3 | 10.79.7.16 | **ESCLAVO 2** (prioridad 100) | SQL Server · Nginx · Keepalived |
-| Cliente | 10.79.7.180 | Cliente | App Flutter → **IP virtual 10.79.7.200** |
+| Server 1 | 10.79.5.86 | **MASTER** (prioridad 120) | Windows: Flask :5000 y :5001 · VM Ubuntu: Nginx + Keepalived |
+| Server 2 | 10.79.4.177 | **ESCLAVO 1** (prioridad 110) | Windows: Flask :5000 y :5001 · VM Ubuntu: Nginx + Keepalived |
+| Server 3 | 10.79.7.16 | **ESCLAVO 2** (prioridad 100) | Windows: Flask :5000 y :5001 · SQL Server · VM Ubuntu: Nginx + Keepalived |
+| Cliente | 10.79.7.180 | Cliente | App Flutter → **http://10.79.7.200:90** (IP virtual) |
 
 ```
                 Flutter (10.79.7.180)
@@ -32,20 +32,22 @@ farmacia_medicamentos/
       ┌─────────────────┼─────────────────┐
   Server1 (MASTER)  Server2 (ESCLAVO1)  Server3 (ESCLAVO2)
    Nginx              Nginx              Nginx
-      └──── upstream: 10.79.5.86:5000 + 10.79.4.177:5001 ────┘
+      └─ upstream (6 APIs): .86 / .177 / .16  ×  :5000 y :5001 ─┘
                         │
        SQL Server 10.79.7.16 · AppDistribuidas_2026_DB
 ```
 
 **Failover:** si cae el MASTER, la IP pasa al ESCLAVO 1; si también cae, pasa al
-ESCLAVO 2. Cuando el MASTER vuelve, **recupera la IP** (preempt).
+ESCLAVO 2. Cuando el MASTER vuelve, **recupera la IP** (preempt), aunque solo quede
+un esclavo activo. Si NGINX falla en un nodo, `chk_nginx` le resta 50 a la prioridad
+(120→70, 110→60, 100→50): un nodo con NGINX sano (≥100) siempre gana a uno caído.
 **Si caen los tres**, la app Flutter muestra **"Sistema en mantenimiento"**,
 reintenta cada 5 s y vuelve sola cuando un servidor responde.
 
 > ⚠ **Antes de desplegar:**
 > - Verifiquen que **10.79.7.200 está libre** (`ping 10.79.7.200` no debe responder).
 >   Si está ocupada, cambien la IP virtual en los 3 `keepalived-*.conf` y en `farmacia_app/lib/config.dart`.
-> - Revisen la máscara (puse `/22`) y el nombre de la interfaz (puse `enp0s3`) con `ip a`.
+> - Revisen la máscara (puse `/22`) y el nombre de la interfaz de la VM (puse `enp0s3`) con `ip a`.
 > - Si el rol de cada compañero es otro, solo intercambien los archivos de keepalived.
 
 ---
@@ -81,9 +83,9 @@ intenta 14 operaciones inválidas y muestra que la BD **rechaza todas**.
    GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.medicamentos TO farmacia_app;
    ```
 4. Abrir el firewall solo para los Flask:
-   `New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress 10.79.5.86,10.79.4.177 -Action Allow`
+   `New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress 10.79.5.86,10.79.4.177,10.79.7.16 -Action Allow`
 
-## 2. API Flask (Server 1 y Server 2)
+## 2. API Flask (los 3 servidores, puertos 5000 y 5001)
 
 Necesitan el **ODBC Driver 17 o 18 for SQL Server** (en Linux: paquete `msodbcsql18`).
 
@@ -94,8 +96,9 @@ venv\Scripts\activate            # Linux: source venv/bin/activate
 pip install -r requirements.txt
 copy .env.example .env           # descomentar DB_SERVER=10.79.7.16,1433 + DB_UID/DB_PWD
 
-python app.py --port 5000        # Server 1
-python app.py --port 5001        # Server 2
+# En CADA servidor, dos consolas (dos instancias de la misma API):
+python app.py --port 5000 --nombre pc1-5000     # PC2: pc2-5000 · PC3: pc3-5000
+python app.py --port 5001 --nombre pc1-5001     # PC2: pc2-5001 · PC3: pc3-5001
 ```
 
 Pruebas:
@@ -118,29 +121,65 @@ python tests/prueba_concurrencia.py --url http://127.0.0.1:5000 --url http://127
 | PATCH | `/api/medicamentos/<id>/stock` | `{"operacion":"SALIDA","cantidad":3}` |
 | DELETE | `/api/medicamentos/<id>?version=N` | Baja lógica (solo con stock 0) |
 
-Cada respuesta trae la cabecera **`X-Server: flask-5000 / flask-5001`**.
+Cada respuesta trae la cabecera **`X-Server`** (p. ej. `pc2-5001`) y, al pasar por NGINX,
+**`X-Upstream`** con la IP:puerto que respondió.
 
-## 3. Nginx + Keepalived (los 3 servidores, Linux)
+## 3. Nginx + Keepalived (los 3 PCs Windows)
 
-```bash
-sudo apt install nginx keepalived curl
-sudo cp nginx/farmacia.conf /etc/nginx/conf.d/farmacia.conf
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
+**Keepalived no existe para Windows** (y en Docker Desktop / WSL2 la IP virtual
+queda dentro de una red NAT y la LAN no la ve). Por eso, igual que en la Unidad 2
+(`enp0s3` es la interfaz de VirtualBox), en **cada PC Windows** se crea una
+**VM Ubuntu en VirtualBox** que corre NGINX (Docker) + Keepalived:
 
-sudo cp keepalived/check_nginx.sh /etc/keepalived/ && sudo chmod 755 /etc/keepalived/check_nginx.sh
-# UNO de estos según el servidor:
-sudo cp keepalived/keepalived-server1-master.conf  /etc/keepalived/keepalived.conf   # 10.79.5.86
-sudo cp keepalived/keepalived-server2-backup1.conf /etc/keepalived/keepalived.conf   # 10.79.4.177
-sudo cp keepalived/keepalived-server3-backup2.conf /etc/keepalived/keepalived.conf   # 10.79.7.16
-sudo systemctl enable --now keepalived
-ip a | grep 10.79.7.200       # solo el nodo que tiene la IP la muestra
+```
+ PC Windows (10.79.x.x)                    VM Ubuntu (adaptador PUENTE)
+ ├─ Flask :5000 y :5001 (+ SQL en PC3)     ├─ Docker: balanceador_nginx  90 -> 8080
+ └─ VirtualBox ─────────────────────────►  └─ Keepalived  (IP virtual 10.79.7.200)
 ```
 
-**Prueba de failover:**
-1. `sudo systemctl stop nginx` en Server 1 → la IP virtual pasa a Server 2.
-2. Lo mismo en Server 2 → pasa a Server 3.
-3. `sudo systemctl start nginx` en Server 1 → **vuelve al MASTER**.
+**3.1 VirtualBox (en cada PC):** Configuración → Red → Adaptador 1 →
+**Conectado a: Adaptador puente** (la tarjeta con la que salen a la red 10.79.x),
+**Modo promiscuo: Permitir todo**. Mejor por cable: con Wi‑Fi el modo puente puede
+no dejar pasar la IP virtual.
+
+**3.2 Windows (los 3 PCs):** las APIs deben escuchar en `0.0.0.0` y el firewall
+debe dejar entrar a las VMs (PowerShell como administrador):
+
+```powershell
+python app.py --host 0.0.0.0 --port 5000 --nombre pc1-5000
+python app.py --host 0.0.0.0 --port 5001 --nombre pc1-5001
+New-NetFirewallRule -DisplayName "Flask Farmacia" -Direction Inbound -Protocol TCP -LocalPort 5000,5001 -RemoteAddress 10.79.4.0/22 -Action Allow
+```
+
+**3.3 VM Ubuntu (en los 3 PCs):**
+
+```bash
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 keepalived curl
+# copiar las carpetas nginx/ y keepalived/ del repo a la VM
+cd nginx && sudo docker compose up -d          # NGINX en el puerto 90
+curl http://127.0.0.1:90/health                # -> OK
+curl http://127.0.0.1:90/api/health            # repetir: X-Server va rotando pc1/pc2/pc3 · 5000/5001
+
+sudo cp ../keepalived/check_nginx.sh /etc/keepalived/ && sudo chmod +x /etc/keepalived/check_nginx.sh
+# UNO de estos según el PC:
+sudo cp ../keepalived/keepalived-server1-master.conf  /etc/keepalived/keepalived.conf   # PC 10.79.5.86
+sudo cp ../keepalived/keepalived-server2-backup1.conf /etc/keepalived/keepalived.conf   # PC 10.79.4.177
+sudo cp ../keepalived/keepalived-server3-backup2.conf /etc/keepalived/keepalived.conf   # PC 10.79.7.16
+sudo systemctl enable keepalived && sudo systemctl restart keepalived
+ip a | grep 10.79.7.200       # solo la VM que tiene la IP virtual la muestra
+```
+
+> Si la IP virtual aparece en **dos** VMs a la vez, la red bloquea multicast:
+> descomenten el bloque `unicast_*` de los 3 `keepalived-*.conf` con las IPs
+> puente de las VMs (`ip a` en cada una).
+> Si editan los archivos en Windows, guárdenlos con fin de línea **LF**
+> (con CRLF `check_nginx.sh` falla siempre). El `.gitattributes` ya lo fuerza.
+
+**Prueba de failover** (desde Windows: `curl http://10.79.7.200:90/api/health`;
+en las VMs: `sudo journalctl -u keepalived -f`):
+1. `sudo docker stop balanceador_nginx` en la VM del PC1 → la IP pasa al ESCLAVO 1.
+2. Lo mismo en la VM del PC2 → pasa al ESCLAVO 2.
+3. `sudo docker start balanceador_nginx` en la VM del PC1 → **vuelve al MASTER**.
 4. Detener los 3 → Flutter muestra **mantenimiento**; al levantar uno, la app vuelve sola.
 
 ## 4. App Flutter (cliente 10.79.7.180)
@@ -151,7 +190,7 @@ flutter pub get
 flutter run           # Android / Windows / Chrome
 ```
 
-La URL está en `lib/config.dart` (`http://10.79.7.200`). Con el ícono ⚙ se puede
+La URL está en `lib/config.dart` (`http://10.79.7.200:90`). Con el ícono ⚙ se puede
 apuntar a un Flask directo (por ejemplo `http://127.0.0.1:5000` para probar en tu PC).
 
 ---
