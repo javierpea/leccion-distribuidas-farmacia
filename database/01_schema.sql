@@ -1,6 +1,6 @@
 /* =====================================================================
    FARMACIA - GRUPO 3 - ESQUEMA COMPLETO
-   Motor: SQL Server Express / Developer   Base: AppDistribuidas_2026_DB
+   Motor: SQL Server (instancia SITIO_AD_A, puerto 1440)   Base: AppDistribuidas_2026_DB
 
    Tablas:
      dbo.medicamentos       catálogo (con ROWVERSION para concurrencia)
@@ -12,9 +12,9 @@
    y el backend (Flask) también están aquí. Si uno falla, el otro lo detiene.
 
    ORDEN DE EJECUCIÓN (en el equipo de la BD):
-     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 01_schema.sql
-     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 02_vistas_procedimientos.sql
-     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 03_datos.sql
+     sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 01_schema.sql
+     sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 02_vistas_procedimientos.sql
+     sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 03_datos.sql
    ¡OJO! Volver a ejecutar este archivo BORRA todos los datos.
    ===================================================================== */
 SET QUOTED_IDENTIFIER ON;   -- necesario para los índices filtrados (email único)

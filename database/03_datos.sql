@@ -1,6 +1,6 @@
 /* =====================================================================
    DATOS DE PRUEBA: 20 medicamentos + 3 usuarios (uno por rol)
-     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 03_datos.sql
+     sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 03_datos.sql
 
    Usuarios (contraseñas guardadas con SHA2_512 + sal, nunca en texto):
      admin         / Admin123     -> ADMIN         (CRUD completo + usuarios)

@@ -42,7 +42,7 @@ con las IPs actuales.
 | `IP_VIRTUAL` / `PUERTO_NGINX` | 10.79.20.200 / 90 | la única dirección que usa la app |
 | `IP_API1` / `PUERTO_API1` | 10.79.20.22 / 5000 | entorno 1 de la API (cliente) |
 | `IP_API2` / `PUERTO_API2` | 10.79.20.38 / 5001 | entorno 2 de la API (Windows del Server 1) |
-| `IP_BD` / `PUERTO_BD` | 10.79.20.22 / 1433 | SQL Server Express del cliente |
+| `IP_BD` / `PUERTO_BD` | 10.79.20.22 / 1440 | SQL Server del cliente (instancia SITIO_AD_A) |
 
 ---
 
@@ -60,7 +60,7 @@ con las IPs actuales.
       IP_API1:5000           IP_API2:5001
               └─────────┬─────────┘
                         ▼
-      SQL Server Express (IP_BD:1433): solo vistas y procedimientos
+      SQL Server SITIO_AD_A (IP_BD:1440): solo vistas y procedimientos
 ```
 
 **Failover:** cae el MASTER → toma el ESCLAVO 1; cae también → toma el ESCLAVO 2.
@@ -99,27 +99,26 @@ Usuarios de prueba (`03_datos.sql`): **admin / Admin123**, **farmaceutico / Farm
 
 ### Cliente (Windows, `IP_API1` / `IP_BD`) — BD + API :5000 + App
 
-Requisito: **SQL Server Express** (+ `sqlcmd`). En *SQL Server Configuration Manager →
-Protocolos de SQLEXPRESS → TCP/IP*: **Habilitado**; en *Direcciones IP → IPAll*: puertos
-dinámicos vacío y **Puerto TCP 1433**.
+Requisito: SQL Server, instancia **SITIO_AD_A** con TCP/IP habilitado en el **puerto 1440**
+(`PUERTO_BD` en `ips.env`) y `sqlcmd`.
 
 ```powershell
 # 0) Una sola vez, PowerShell como ADMINISTRADOR (los comandos exactos los imprime: python aplicar_ips.py)
 New-NetFirewallRule -DisplayName "API Farmacia 5000" -Direction Inbound -Protocol TCP -LocalPort 5000 -RemoteAddress 10.79.16.0/21 -Action Allow
-New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress 10.79.20.22,10.79.20.38 -Action Allow
+New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1440 -RemoteAddress 10.79.20.22,10.79.20.38 -Action Allow
 
 # 1) Base de datos (01 crea la BD; volver a ejecutarlo BORRA los datos)
 cd database
-sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 01_schema.sql
-sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 02_vistas_procedimientos.sql
-sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 03_datos.sql
-sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 05_login_api.sql
-Restart-Service 'MSSQL$SQLEXPRESS'          # (administrador) aplica TCP 1433 y autenticación mixta
+sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 01_schema.sql
+sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 02_vistas_procedimientos.sql
+sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 03_datos.sql
+sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 05_login_api.sql
+Restart-Service 'MSSQL$SITIO_AD_A'          # (administrador) aplica la autenticación mixta
 
 # 2) API - entorno 1
 cd ..\backend
 pip install -r requirements.txt
-copy .env.example .env                       # ya trae DB_SERVER=localhost\SQLEXPRESS
+copy .env.example .env                       # ya trae DB_SERVER=localhost,${PUERTO_BD}
 python app.py --port 5000 --nombre cliente-5000
 
 # 3) App Flutter (otra consola)
@@ -136,7 +135,7 @@ git clone https://github.com/javierpea/leccion-distribuidas-farmacia.git
 cd leccion-distribuidas-farmacia\backend
 pip install -r requirements.txt
 copy .env.example .env
-#   En .env: comentar  DB_SERVER=localhost\SQLEXPRESS  y descomentar las 3 líneas del entorno 2
+#   En .env: comentar  DB_SERVER=localhost,${PUERTO_BD}  y descomentar las 3 líneas del entorno 2
 #   (DB_SERVER=${IP_BD},${PUERTO_BD} · DB_UID · DB_PWD)
 python app.py --port 5001 --nombre server1-5001
 ```

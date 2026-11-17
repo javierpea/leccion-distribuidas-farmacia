@@ -1,7 +1,7 @@
 /* =====================================================================
    PRUEBAS DE LOS CONTROLES DE LA BD - cada bloque DEBE FALLAR.
    (Para la exposición: muestra que la BD protege aunque no haya API)
-     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 04_pruebas_controles.sql
+     sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 04_pruebas_controles.sql
    Todo se hace dentro de una transacción que se deshace: no cambia datos.
    ===================================================================== */
 SET QUOTED_IDENTIFIER ON;

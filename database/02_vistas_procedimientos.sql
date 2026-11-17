@@ -3,7 +3,7 @@
    (Unidad 1: vistas y SPs consumidos por la API · Unidad 2: concurrencia
     · Unidad 3: login con token y roles)
 
-     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 02_vistas_procedimientos.sql
+     sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 02_vistas_procedimientos.sql
 
    La API Flask SOLO usa estas vistas y procedimientos (no toca las tablas
    directamente). El usuario SQL de la API (05_login_api.sql) solo tiene

@@ -1,7 +1,7 @@
 /* =====================================================================
    Usuario SQL para la API remota (entorno 2, IP_API2 en ips.env).
-   Ejecutar en el equipo de la BD, sobre SQL Server Express:
-     sqlcmd -S "localhost\SQLEXPRESS" -E -I -f 65001 -i 05_login_api.sql
+   Ejecutar en el equipo de la BD, sobre la instancia SITIO_AD_A:
+     sqlcmd -S "localhost\SITIO_AD_A" -E -I -f 65001 -i 05_login_api.sql
 
    Mínimo privilegio: la API solo puede LEER las vistas y EJECUTAR los
    procedimientos. No puede tocar las tablas directamente (ni ver los
@@ -32,5 +32,5 @@ GO
 EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE',
      N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2;
 GO
-PRINT 'Login farmacia_app listo. Reiniciar el servicio:  Restart-Service ''MSSQL$SQLEXPRESS''';
+PRINT 'Login farmacia_app listo. Reiniciar el servicio:  Restart-Service ''MSSQL$SITIO_AD_A''';
 GO

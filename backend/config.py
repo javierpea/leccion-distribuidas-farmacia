@@ -35,7 +35,8 @@ except ImportError:  # python-dotenv es opcional
 
 # ---------------- Base de datos ----------------
 DB_DRIVER = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
-DB_SERVER = os.getenv("DB_SERVER", r"localhost\SQLEXPRESS")
+# Por defecto: SQL Server local por el puerto de ips.env (PUERTO_BD)
+DB_SERVER = os.getenv("DB_SERVER", f"localhost,{os.getenv('PUERTO_BD', '1433')}")
 DB_DATABASE = os.getenv("DB_DATABASE", "AppDistribuidas_2026_DB")
 DB_UID = os.getenv("DB_UID")
 DB_PWD = os.getenv("DB_PWD")
