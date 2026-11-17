@@ -40,9 +40,9 @@ con las IPs actuales.
 |---|---|---|
 | `IP_SERVER1/2/3` | 10.79.20.38 · 10.79.16.19 · 10.79.20.2 | MASTER · ESCLAVO 1 · ESCLAVO 2 |
 | `IP_VIRTUAL` / `PUERTO_NGINX` | 10.79.7.200 / 90 | la única dirección que usa la app |
-| `IP_API1` / `PUERTO_API1` | 10.79.7.180 / 5000 | entorno 1 de la API (cliente) |
+| `IP_API1` / `PUERTO_API1` | 10.79.20.22 / 5000 | entorno 1 de la API (cliente) |
 | `IP_API2` / `PUERTO_API2` | 10.79.20.38 / 5001 | entorno 2 de la API (Windows del Server 1) |
-| `IP_BD` / `PUERTO_BD` | 10.79.7.180 / 1433 | SQL Server Express del cliente |
+| `IP_BD` / `PUERTO_BD` | 10.79.20.22 / 1433 | SQL Server Express del cliente |
 
 ---
 
@@ -106,7 +106,7 @@ dinámicos vacío y **Puerto TCP 1433**.
 ```powershell
 # 0) Una sola vez, PowerShell como ADMINISTRADOR (los comandos exactos los imprime: python aplicar_ips.py)
 New-NetFirewallRule -DisplayName "API Farmacia 5000" -Direction Inbound -Protocol TCP -LocalPort 5000 -RemoteAddress 10.79.4.0/22 -Action Allow
-New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress 10.79.7.180,10.79.20.38 -Action Allow
+New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress 10.79.20.22,10.79.20.38 -Action Allow
 
 # 1) Base de datos (01 crea la BD; volver a ejecutarlo BORRA los datos)
 cd database
