@@ -38,11 +38,11 @@ con las IPs actuales.
 
 | Variable | Valor actual | Qué es |
 |---|---|---|
-| `IP_SERVER1/2/3` | 10.79.17.155 · 10.79.16.19 · 10.79.20.2 | MASTER · ESCLAVO 1 · ESCLAVO 2 |
-| `IP_VIRTUAL` / `PUERTO_NGINX` | 10.79.23.250 / 90 | la única dirección que usa la app |
-| `IP_API1` / `PUERTO_API1` | 10.79.20.22 / 5000 | entorno 1 de la API (cliente) |
-| `IP_API2` / `PUERTO_API2` | 10.79.17.155 / 5001 | entorno 2 de la API (Windows del Server 1) |
-| `IP_BD` / `PUERTO_BD` | 10.79.20.22 / 1440 | SQL Server del cliente (instancia SITIO_AD_A) |
+| `IP_SERVER1/2/3` | 10.79.24.202 · 10.79.16.19 · 10.79.20.2 | MASTER · ESCLAVO 1 · ESCLAVO 2 |
+| `IP_VIRTUAL` / `PUERTO_NGINX` | 10.79.31.240 / 90 | la única dirección que usa la app |
+| `IP_API1` / `PUERTO_API1` | 10.79.28.49 / 5000 | entorno 1 de la API (cliente) |
+| `IP_API2` / `PUERTO_API2` | 10.79.24.202 / 5001 | entorno 2 de la API (Windows del Server 1) |
+| `IP_BD` / `PUERTO_BD` | 10.79.28.49 / 1440 | SQL Server del cliente (instancia SITIO_AD_A) |
 
 ---
 
@@ -104,8 +104,8 @@ Requisito: SQL Server, instancia **SITIO_AD_A** con TCP/IP habilitado en el **pu
 
 ```powershell
 # 0) Una sola vez, PowerShell como ADMINISTRADOR (los comandos exactos los imprime: python aplicar_ips.py)
-New-NetFirewallRule -DisplayName "API Farmacia 5000" -Direction Inbound -Protocol TCP -LocalPort 5000 -RemoteAddress 10.79.16.0/21 -Action Allow
-New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1440 -RemoteAddress 10.79.20.22,10.79.17.155 -Action Allow
+New-NetFirewallRule -DisplayName "API Farmacia 5000" -Direction Inbound -Protocol TCP -LocalPort 5000 -RemoteAddress 10.79.0.0/19 -Action Allow
+New-NetFirewallRule -DisplayName "SQL Farmacia" -Direction Inbound -Protocol TCP -LocalPort 1440 -RemoteAddress 10.79.28.49,10.79.24.202 -Action Allow
 
 # 1) Base de datos (01 crea la BD; volver a ejecutarlo BORRA los datos)
 cd database
@@ -130,7 +130,7 @@ flutter run -d windows
 ### Server 1 (Windows, `IP_API2`) — API :5001 (entorno 2)
 
 ```powershell
-New-NetFirewallRule -DisplayName "API Farmacia 5001" -Direction Inbound -Protocol TCP -LocalPort 5001 -RemoteAddress 10.79.16.0/21 -Action Allow
+New-NetFirewallRule -DisplayName "API Farmacia 5001" -Direction Inbound -Protocol TCP -LocalPort 5001 -RemoteAddress 10.79.0.0/19 -Action Allow
 git clone https://github.com/javierpea/leccion-distribuidas-farmacia.git
 cd leccion-distribuidas-farmacia\backend
 pip install -r requirements.txt
@@ -166,11 +166,11 @@ Todos se ejecutan **dentro de la VM** del servidor que se quiere probar.
 | Encender Keepalived | `sudo systemctl start keepalived` |
 | Simular que se cae el servidor completo | `sudo docker stop balanceador_nginx && sudo systemctl stop keepalived` |
 | Volver a levantar el servidor completo | `sudo docker start balanceador_nginx && sudo systemctl start keepalived` |
-| ¿Este nodo tiene la IP virtual? | `ip -4 addr \| grep 10.79.23.250` |
+| ¿Este nodo tiene la IP virtual? | `ip -4 addr \| grep 10.79.31.240` |
 | Ver MASTER/BACKUP en vivo | `sudo journalctl -u keepalived -f` |
 | Estado | `sudo systemctl status keepalived` · `sudo docker ps` |
 
-**Guion de prueba** (desde el cliente: `curl.exe -i http://10.79.23.250:90/api/health`
+**Guion de prueba** (desde el cliente: `curl.exe -i http://10.79.31.240:90/api/health`
 varias veces; `X-Balanceador` dice qué VM atendió y `X-Server` qué API):
 
 1. Todo encendido → la IP virtual está en el **Server 1**.
