@@ -69,6 +69,13 @@ class ApiService {
   /// vivo pero sin Flask/BD). La app tapa todo con "Sistema en mantenimiento".
   static final ValueNotifier<bool> enMantenimiento = ValueNotifier(false);
 
+  /// Mientras la IP virtual pasa de un servidor a otro (failover de
+  /// Keepalived, unos segundos) las peticiones fallan. La app espera hasta
+  /// [_toleranciaFailover] antes de mostrar "Sistema en mantenimiento":
+  /// si otro servidor responde antes, el usuario no nota nada.
+  static const _toleranciaFailover = Duration(seconds: 10);
+  static DateTime? _primerFallo;
+
   static bool _esCaida(int status) =>
       status == 0 || status == 502 || status == 503 || status == 504;
 
@@ -107,24 +114,30 @@ class ApiService {
   static Future<(Map<String, dynamic>, String)> _enviar(
       String ruta, Future<http.Response> Function() peticion,
       {bool reintentar = false, Duration? limite}) async {
-    // Las consultas (GET) se reintentan una vez: si la IP virtual está
-    // pasando de un servidor a otro (failover ~3 s), el usuario no lo nota.
-    final intentos = reintentar ? 2 : 1;
-    for (var i = 1;; i++) {
+    // Las consultas (GET) se reintentan cada segundo mientras dure el
+    // cambio de servidor. Las escrituras (POST/PUT/...) no se repiten solas
+    // para no registrar dos veces lo mismo.
+    while (true) {
       try {
         final resultado = await _enviarInterno(peticion, limite ?? AppConfig.timeout);
+        _primerFallo = null;
         enMantenimiento.value = false;
         return resultado;
       } on ApiException catch (e) {
-        if (_esCaida(e.status) && i < intentos) {
-          await Future.delayed(const Duration(seconds: 1));
-          continue;
-        }
         if (_esCaida(e.status)) {
+          _primerFallo ??= DateTime.now();
+          final caidoHace = DateTime.now().difference(_primerFallo!);
+          if (reintentar && caidoHace < _toleranciaFailover) {
+            await Future.delayed(const Duration(seconds: 1));
+            continue; // probablemente otro servidor está tomando el control
+          }
           // Solo se ve en la consola de "flutter run" (diagnóstico)
           debugPrint('[API] ${AppConfig.baseUrl}/api$ruta -> ${e.status} ${e.mensaje}');
+          if (caidoHace >= _toleranciaFailover) enMantenimiento.value = true;
+        } else {
+          _primerFallo = null; // el servidor respondió (400/401/404/409...)
+          enMantenimiento.value = false;
         }
-        enMantenimiento.value = _esCaida(e.status);
         if (e.status == 401 && !_esRutaLogin(ruta) && Sesion.activa) {
           Sesion.cerrar();
           irAlLogin(e.mensaje);
