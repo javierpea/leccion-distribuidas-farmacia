@@ -25,6 +25,16 @@ class Validadores {
 
   static String limpiar(String s) => s.trim().replaceAll(RegExp(r'\s+'), ' ');
 
+  /// "PARACETAMOL genfar" -> "Paracetamol Genfar": primera letra de cada
+  /// palabra en mayúscula y el resto en minúscula (respeta tildes y ñ).
+  static String formatoTitulo(String s) => s
+      .split(' ')
+      .map((p) => p.isEmpty ? p : p[0].toUpperCase() + p.substring(1).toLowerCase())
+      .join(' ');
+
+  /// limpiar() + formatoTitulo(): lo que se envía a la API en los nombres
+  static String nombrePropio(String s) => formatoTitulo(limpiar(s));
+
   // ---------------- Validadores de campo ----------------
   static String? soloLetras(String? v, String campo, int min, int max) {
     final s = limpiar(v ?? '');
@@ -121,9 +131,14 @@ class Validadores {
   }
 
   // ---------------- Formatters (bloquean el teclado) ----------------
+  /// Nombres (medicamento, principio activo, laboratorio, nombre completo):
+  /// solo letras y, mientras se escribe, cada palabra queda "Así", sin
+  /// importar si el teclado está en mayúsculas o minúsculas.
   static final soloLetrasFmt = [
     FilteringTextInputFormatter.allow(RegExp('[$_letra ]')),
     FilteringTextInputFormatter.deny(RegExp(r'  +'), replacementString: ' '),
+    TextInputFormatter.withFunction(
+        (viejo, nuevo) => nuevo.copyWith(text: formatoTitulo(nuevo.text))),
   ];
 
   static final soloEnterosFmt = [
@@ -151,7 +166,8 @@ class Validadores {
     }),
   ];
 
-  /// Letras y números en MAYÚSCULAS + guion (código, registro, lote)
+  /// Códigos (MED-0099, registro sanitario, lote): TODO en MAYÚSCULAS,
+  /// letras, números y guion
   static final alfanumericoFmt = [
     FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-]')),
     TextInputFormatter.withFunction(

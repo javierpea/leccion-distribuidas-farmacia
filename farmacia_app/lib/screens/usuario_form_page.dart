@@ -70,7 +70,7 @@ class _UsuarioFormPageState extends State<UsuarioFormPage> {
     final email = _email.text.trim();
     return {
       if (!_esEdicion) 'usuario': _usuario.text.trim(),
-      'nombre_completo': Validadores.limpiar(_nombre.text),
+      'nombre_completo': Validadores.nombrePropio(_nombre.text),
       'email': email.isEmpty ? null : email,
       'rol': _rol,
       'estado': _estado,

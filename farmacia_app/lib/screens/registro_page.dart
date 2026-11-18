@@ -48,7 +48,7 @@ class _RegistroPageState extends State<RegistroPage> {
     setState(() => _guardando = true);
     try {
       final u = await ApiService.registro({
-        'nombre_completo': Validadores.limpiar(_nombre.text),
+        'nombre_completo': Validadores.nombrePropio(_nombre.text),
         'usuario': _usuario.text.trim(),
         'email': _email.text.trim().isEmpty ? null : _email.text.trim(),
         'password': _password.text,

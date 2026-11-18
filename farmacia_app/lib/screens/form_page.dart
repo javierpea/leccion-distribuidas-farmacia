@@ -86,9 +86,9 @@ class _FormPageState extends State<FormPage> {
 
   Map<String, dynamic> _cuerpo() => {
         if (!_esEdicion) 'codigo': _codigo.text.trim().toUpperCase(),
-        'nombre_comercial': Validadores.limpiar(_nombre.text),
-        'principio_activo': Validadores.limpiar(_principio.text),
-        'laboratorio': Validadores.limpiar(_laboratorio.text),
+        'nombre_comercial': Validadores.nombrePropio(_nombre.text),
+        'principio_activo': Validadores.nombrePropio(_principio.text),
+        'laboratorio': Validadores.nombrePropio(_laboratorio.text),
         'concentracion': Validadores.limpiar(_concentracion.text)
             .toLowerCase()
             .replaceAll('ui', 'UI'),

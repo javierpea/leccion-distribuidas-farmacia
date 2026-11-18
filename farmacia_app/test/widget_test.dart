@@ -88,7 +88,24 @@ void main() {
     test('letras: sin números ni signos', () {
       expect(escribir(Validadores.soloLetrasFmt, 'Ana', 'Ana1').text, 'Ana');
       expect(escribir(Validadores.soloLetrasFmt, 'Ana', 'Ana@').text, 'Ana');
-      expect(escribir(Validadores.soloLetrasFmt, 'Ana', 'Ana ñ').text, 'Ana ñ');
+      expect(escribir(Validadores.soloLetrasFmt, 'Ana', 'Ana ñ').text, 'Ana Ñ');
+    });
+
+    test('nombres: primera letra de cada palabra en mayúscula', () {
+      expect(escribir(Validadores.soloLetrasFmt, '', 'PARACETAMOL genfar').text,
+          'Paracetamol Genfar');
+      expect(escribir(Validadores.soloLetrasFmt, '', 'áCIDO ASCÓRBICO').text,
+          'Ácido Ascórbico');
+      expect(Validadores.nombrePropio('  jUAN   pÉREZ '), 'Juan Pérez');
+    });
+
+    test('códigos: siempre en mayúsculas', () {
+      expect(escribir(Validadores.alfanumericoFmt, '', 'med-0099').text, 'MED-0099');
+      expect(escribir(Validadores.alfanumericoFmt, '', 'l2026a01').text, 'L2026A01');
+    });
+
+    test('contraseña: no cambia mayúsculas ni minúsculas', () {
+      expect(escribir(Validadores.passwordFmt, '', 'AbCd1234').text, 'AbCd1234');
     });
   });
 }
