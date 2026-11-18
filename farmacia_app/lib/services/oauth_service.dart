@@ -7,6 +7,9 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/usuario.dart';
+import 'api_service.dart';
+
 /// Resultado del navegador: el "code" que la API canjea con Google/Facebook.
 class ResultadoOAuth {
   final String code;
@@ -27,6 +30,23 @@ class ResultadoOAuth {
 class OAuthService {
   static final _azar = Random.secure();
 
+  /// Inicia sesión (o crea la cuenta de CLIENTE si no existe) con Google o
+  /// Facebook. Lanza Exception con un mensaje corto para el usuario.
+  static Future<Usuario> iniciarSesion(String proveedor) async {
+    final nombre = proveedor == 'GOOGLE' ? 'Google' : 'Facebook';
+    final c = await ApiService.configLogin();
+    final activo = proveedor == 'GOOGLE' ? c.google : c.facebook;
+    if (!activo) {
+      throw Exception('El ingreso con $nombre no está disponible por el momento.');
+    }
+    final r = await autorizar(
+      proveedor: proveedor,
+      clientId: proveedor == 'GOOGLE' ? c.googleClientId : c.facebookAppId,
+      redirectUri: c.redirectUri,
+    );
+    return ApiService.loginSocial(proveedor, r.code, r.codeVerifier, c.redirectUri);
+  }
+
   static String _aleatorio(int largo) {
     const letras =
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -40,7 +60,7 @@ class OAuthService {
     required String redirectUri,
   }) async {
     if (kIsWeb) {
-      throw Exception('El inicio con $proveedor no está disponible en la versión web');
+      throw Exception('El ingreso con ${proveedor == 'GOOGLE' ? 'Google' : 'Facebook'} no está disponible en la versión web.');
     }
     final redireccion = Uri.parse(redirectUri);
     final estado = _aleatorio(32); // evita que otra página inyecte un code
@@ -73,8 +93,7 @@ class OAuthService {
       servidores.add(
           await HttpServer.bind(InternetAddress.loopbackIPv4, redireccion.port));
     } on SocketException {
-      throw Exception('El puerto ${redireccion.port} está ocupado. Cierre otras '
-          'ventanas de inicio de sesión e intente de nuevo.');
+      throw Exception('Cierre otras ventanas de inicio de sesión e intente de nuevo.');
     }
     try {
       servidores.add(
@@ -105,15 +124,15 @@ class OAuthService {
 
     try {
       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        throw Exception('No se pudo abrir el navegador');
+        throw Exception('No se pudo abrir el navegador.');
       }
       final uri = await respuesta.future.timeout(const Duration(minutes: 3),
-          onTimeout: () => throw Exception('Se agotó el tiempo para iniciar sesión'));
+          onTimeout: () => throw Exception('Se agotó el tiempo para iniciar sesión.'));
       final p = uri.queryParameters;
-      if (p['error'] != null) throw Exception('Inicio de sesión cancelado');
-      if (p['state'] != estado) throw Exception('Respuesta no válida (state)');
+      if (p['error'] != null) throw Exception('Inicio de sesión cancelado.');
+      if (p['state'] != estado) throw Exception('No se pudo iniciar sesión. Intente de nuevo.');
       final code = p['code'];
-      if (code == null || code.isEmpty) throw Exception('No se recibió el código');
+      if (code == null || code.isEmpty) throw Exception('No se pudo iniciar sesión. Intente de nuevo.');
       return ResultadoOAuth(code, proveedor == 'GOOGLE' ? verificador : null);
     } finally {
       for (final s in servidores) {

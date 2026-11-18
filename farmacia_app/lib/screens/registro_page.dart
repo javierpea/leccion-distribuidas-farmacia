@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/api_service.dart';
+import '../services/oauth_service.dart';
 import '../utils/validadores.dart';
+import '../widgets/botones_sociales.dart';
 
 /// Registro público: SIEMPRE crea una cuenta de CLIENTE (el rol lo
 /// asigna la BD en sp_usuario_registrar, no la app). Al terminar, la
@@ -59,6 +61,24 @@ class _RegistroPageState extends State<RegistroPage> {
         _mensaje = e.mensaje;
       });
       _form.currentState!.validate(); // pinta los errores del servidor
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
+  }
+
+  /// Crear la cuenta con Google o Facebook (queda como CLIENTE).
+  Future<void> _registrarCon(String proveedor) async {
+    setState(() {
+      _guardando = true;
+      _mensaje = null;
+    });
+    try {
+      final u = await OAuthService.iniciarSesion(proveedor);
+      if (mounted) Navigator.pop(context, u);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _mensaje = e.mensaje);
+    } catch (e) {
+      if (mounted) setState(() => _mensaje = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
@@ -157,7 +177,13 @@ class _RegistroPageState extends State<RegistroPage> {
                       : const Icon(Icons.how_to_reg),
                   label: const Text('CREAR CUENTA'),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 20),
+                BotonesSociales(
+                  accion: 'Registrarse con',
+                  habilitado: !_guardando,
+                  alElegir: _registrarCon,
+                ),
+                const SizedBox(height: 12),
                 const Text('Las cuentas nuevas son de tipo Cliente.',
                     textAlign: TextAlign.center, style: TextStyle(fontSize: 12)),
               ]),

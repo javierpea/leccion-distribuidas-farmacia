@@ -5,6 +5,7 @@ import '../navegacion.dart';
 import '../services/api_service.dart';
 import '../services/oauth_service.dart';
 import '../utils/validadores.dart';
+import '../widgets/botones_sociales.dart';
 import 'registro_page.dart';
 
 /// Pantalla de inicio de sesión (Unidad 3 - Práctica Final, Parte 3).
@@ -26,7 +27,6 @@ class _LoginPageState extends State<LoginPage> {
   bool _verClave = false;
   bool _cargando = false;
   String? _error;
-  ConfigLogin? _config;
 
   @override
   void initState() {
@@ -41,13 +41,13 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  /// Pregunta a la API si Google / Facebook están configurados.
+  /// Al abrir el login se consulta la API: si no hay ningún servidor
+  /// disponible, la app muestra la pantalla de mantenimiento.
   Future<void> _cargarConfig() async {
     try {
-      final c = await ApiService.configLogin();
-      if (mounted) setState(() => _config = c);
+      await ApiService.configLogin();
     } on ApiException {
-      // Si la API no responde se muestra la pantalla de mantenimiento
+      // la pantalla de mantenimiento se encarga
     }
   }
 
@@ -68,27 +68,17 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _ingresarCon(String proveedor) async {
-    final c = _config;
-    if (c == null) return;
     setState(() {
       _cargando = true;
       _error = null;
     });
     try {
-      final r = await OAuthService.autorizar(
-        proveedor: proveedor,
-        clientId: proveedor == 'GOOGLE' ? c.googleClientId : c.facebookAppId,
-        redirectUri: c.redirectUri,
-      );
-      final u = await ApiService.loginSocial(
-          proveedor, r.code, r.codeVerifier, c.redirectUri);
+      final u = await OAuthService.iniciarSesion(proveedor);
       irAInicio(u);
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.mensaje);
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
-      }
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
@@ -103,7 +93,6 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final esquema = Theme.of(context).colorScheme;
-    final c = _config;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -194,35 +183,11 @@ class _LoginPageState extends State<LoginPage> {
                               child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('INICIAR SESIÓN'),
                     ),
-                    if (c != null && (c.google || c.facebook)) ...[
-                      const SizedBox(height: 20),
-                      const Row(children: [
-                        Expanded(child: Divider()),
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 8),
-                          child: Text('o continúe con'),
-                        ),
-                        Expanded(child: Divider()),
-                      ]),
-                      const SizedBox(height: 12),
-                      if (c.google)
-                        OutlinedButton.icon(
-                          onPressed: _cargando ? null : () => _ingresarCon('GOOGLE'),
-                          icon: const Text('G',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, color: Colors.red, fontSize: 18)),
-                          label: const Text('Google (Gmail)'),
-                          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
-                        ),
-                      if (c.google && c.facebook) const SizedBox(height: 8),
-                      if (c.facebook)
-                        OutlinedButton.icon(
-                          onPressed: _cargando ? null : () => _ingresarCon('FACEBOOK'),
-                          icon: const Icon(Icons.facebook, color: Color(0xFF1877F2)),
-                          label: const Text('Facebook'),
-                          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
-                        ),
-                    ],
+                    const SizedBox(height: 20),
+                    BotonesSociales(
+                      habilitado: !_cargando,
+                      alElegir: _ingresarCon,
+                    ),
                     const SizedBox(height: 16),
                     TextButton(
                       onPressed: _cargando ? null : _registrarse,

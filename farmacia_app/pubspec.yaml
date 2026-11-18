@@ -38,6 +38,8 @@ dependencies:
   # Login con Google / Facebook: abrir el navegador y PKCE
   url_launcher: ^6.3.1
   crypto: ^3.0.6
+  # Íconos de Google y Facebook en los botones de inicio de sesión
+  font_awesome_flutter: ^10.7.0
 
 dev_dependencies:
   flutter_test:
